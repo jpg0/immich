@@ -1,18 +1,20 @@
 import { authenticate } from '$lib/utils/auth';
-import { api } from '@api';
+import { getFormatter } from '$lib/utils/i18n';
+import { getApiKeys, getSessions } from '@immich/sdk';
 import type { PageLoad } from './$types';
 
 export const load = (async () => {
   await authenticate();
 
-  const { data: keys } = await api.keyApi.getApiKeys();
-  const { data: devices } = await api.authenticationApi.getAuthDevices();
+  const keys = await getApiKeys();
+  const sessions = await getSessions();
+  const $t = await getFormatter();
 
   return {
     keys,
-    devices,
+    sessions,
     meta: {
-      title: 'Settings',
+      title: $t('settings'),
     },
   };
 }) satisfies PageLoad;

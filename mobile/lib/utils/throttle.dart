@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:flutter_hooks/flutter_hooks.dart';
 
 /// Throttles function calls with the [interval] provided.
@@ -10,12 +8,15 @@ class Throttler {
 
   Throttler({required this.interval});
 
-  void run(FutureOr<void> Function() action) {
+  T? run<T>(T Function() action) {
     if (_lastActionTime == null ||
         (DateTime.now().difference(_lastActionTime!) > interval)) {
-      action();
+      final response = action();
       _lastActionTime = DateTime.now();
+      return response;
     }
+
+    return null;
   }
 
   void dispose() {
@@ -34,8 +35,8 @@ Throttler useThrottler({
 class _ThrottleHook extends Hook<Throttler> {
   const _ThrottleHook({
     required this.interval,
-    List<Object?>? keys,
-  }) : super(keys: keys);
+    super.keys,
+  });
 
   final Duration interval;
 

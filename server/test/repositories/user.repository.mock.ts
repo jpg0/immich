@@ -1,25 +1,26 @@
-import { IUserRepository, UserCore } from '@app/domain';
+import { UserRepository } from 'src/repositories/user.repository';
+import { RepositoryInterface } from 'src/types';
+import { Mocked, vitest } from 'vitest';
 
-export const newUserRepositoryMock = (reset = true): jest.Mocked<IUserRepository> => {
-  if (reset) {
-    UserCore.reset();
-  }
-
+export const newUserRepositoryMock = (): Mocked<RepositoryInterface<UserRepository>> => {
   return {
-    get: jest.fn(),
-    getAdmin: jest.fn(),
-    getByEmail: jest.fn(),
-    getByStorageLabel: jest.fn(),
-    getByOAuthId: jest.fn(),
-    getUserStats: jest.fn(),
-    getList: jest.fn(),
-    create: jest.fn(),
-    update: jest.fn(),
-    delete: jest.fn(),
-    getDeletedUsers: jest.fn(),
-    restore: jest.fn(),
-    hasAdmin: jest.fn(),
-    updateUsage: jest.fn(),
-    syncUsage: jest.fn(),
+    get: vitest.fn(),
+    getMetadata: vitest.fn().mockResolvedValue([]),
+    getAdmin: vitest.fn(),
+    getByEmail: vitest.fn(),
+    getByStorageLabel: vitest.fn(),
+    getByOAuthId: vitest.fn(),
+    getUserStats: vitest.fn(),
+    getList: vitest.fn(),
+    create: vitest.fn(),
+    update: vitest.fn(),
+    delete: vitest.fn(),
+    restore: vitest.fn(),
+    getDeletedUsers: vitest.fn(),
+    hasAdmin: vitest.fn(),
+    updateUsage: vitest.fn(),
+    syncUsage: vitest.fn(),
+    upsertMetadata: vitest.fn(),
+    deleteMetadata: vitest.fn(),
   };
 };

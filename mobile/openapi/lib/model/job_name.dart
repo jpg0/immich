@@ -1,7 +1,7 @@
 //
 // AUTO-GENERATED FILE, DO NOT MODIFY!
 //
-// @dart=2.12
+// @dart=2.18
 
 // ignore_for_file: unused_element, unused_import
 // ignore_for_file: always_put_required_named_parameters_first
@@ -29,12 +29,15 @@ class JobName {
   static const faceDetection = JobName._(r'faceDetection');
   static const facialRecognition = JobName._(r'facialRecognition');
   static const smartSearch = JobName._(r'smartSearch');
+  static const duplicateDetection = JobName._(r'duplicateDetection');
   static const backgroundTask = JobName._(r'backgroundTask');
   static const storageTemplateMigration = JobName._(r'storageTemplateMigration');
   static const migration = JobName._(r'migration');
   static const search = JobName._(r'search');
   static const sidecar = JobName._(r'sidecar');
   static const library_ = JobName._(r'library');
+  static const notifications = JobName._(r'notifications');
+  static const backupDatabase = JobName._(r'backupDatabase');
 
   /// List of all possible values in this [enum][JobName].
   static const values = <JobName>[
@@ -44,12 +47,15 @@ class JobName {
     faceDetection,
     facialRecognition,
     smartSearch,
+    duplicateDetection,
     backgroundTask,
     storageTemplateMigration,
     migration,
     search,
     sidecar,
     library_,
+    notifications,
+    backupDatabase,
   ];
 
   static JobName? fromJson(dynamic value) => JobNameTypeTransformer().decode(value);
@@ -94,12 +100,15 @@ class JobNameTypeTransformer {
         case r'faceDetection': return JobName.faceDetection;
         case r'facialRecognition': return JobName.facialRecognition;
         case r'smartSearch': return JobName.smartSearch;
+        case r'duplicateDetection': return JobName.duplicateDetection;
         case r'backgroundTask': return JobName.backgroundTask;
         case r'storageTemplateMigration': return JobName.storageTemplateMigration;
         case r'migration': return JobName.migration;
         case r'search': return JobName.search;
         case r'sidecar': return JobName.sidecar;
         case r'library': return JobName.library_;
+        case r'notifications': return JobName.notifications;
+        case r'backupDatabase': return JobName.backupDatabase;
         default:
           if (!allowNull) {
             throw ArgumentError('Unknown enum value to decode: $data');

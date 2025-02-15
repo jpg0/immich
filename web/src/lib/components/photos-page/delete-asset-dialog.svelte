@@ -1,57 +1,46 @@
 <script lang="ts">
-  import { createEventDispatcher } from 'svelte';
-  import ConfirmDialogue from '../shared-components/confirm-dialogue.svelte';
+  import ConfirmDialog from '../shared-components/dialog/confirm-dialog.svelte';
   import { showDeleteModal } from '$lib/stores/preferences.store';
+  import Checkbox from '$lib/components/elements/checkbox.svelte';
+  import { t } from 'svelte-i18n';
+  import FormatMessage from '$lib/components/i18n/format-message.svelte';
 
-  export let size: number;
+  interface Props {
+    size: number;
+    onConfirm: () => void;
+    onCancel: () => void;
+  }
 
-  let checked = false;
+  let { size, onConfirm, onCancel }: Props = $props();
 
-  const dispatch = createEventDispatcher<{
-    confirm: void;
-    cancel: void;
-  }>();
-
-  const onToggle = () => {
-    checked = !checked;
-  };
+  let checked = $state(false);
 
   const handleConfirm = () => {
     if (checked) {
       $showDeleteModal = false;
     }
-    dispatch('confirm');
+    onConfirm();
   };
 </script>
 
-<ConfirmDialogue
-  title="Permanently Delete Asset{size > 1 ? 's' : ''}"
-  confirmText="Delete"
-  on:confirm={handleConfirm}
-  on:cancel={() => dispatch('cancel')}
-  on:escape={() => dispatch('cancel')}
+<ConfirmDialog
+  title={$t('permanently_delete_assets_count', { values: { count: size } })}
+  confirmText={$t('delete')}
+  onConfirm={handleConfirm}
+  {onCancel}
 >
-  <svelte:fragment slot="prompt">
+  {#snippet promptSnippet()}
     <p>
-      Are you sure you want to permanently delete
-      {#if size > 1}
-        these <b>{size}</b> assets? This will also remove them from their album(s).
-      {:else}
-        this asset? This will also remove it from its album(s).
-      {/if}
+      <FormatMessage key="permanently_delete_assets_prompt" values={{ count: size }}>
+        {#snippet children({ message })}
+          <b>{message}</b>
+        {/snippet}
+      </FormatMessage>
     </p>
-    <p><b>You cannot undo this action!</b></p>
+    <p><b>{$t('cannot_undo_this_action')}</b></p>
 
-    <div class="flex gap-2 items-center justify-center pt-4">
-      <label id="confirm-label" for="confirm-input">Do not show this message again</label>
-      <input
-        id="confirm-input"
-        aria-labelledby="confirm-input"
-        class="disabled::cursor-not-allowed h-3 w-3 opacity-1"
-        type="checkbox"
-        bind:checked
-        on:click={onToggle}
-      />
+    <div class="pt-4 flex justify-center items-center">
+      <Checkbox id="confirm-deletion-input" label={$t('do_not_show_again')} bind:checked />
     </div>
-  </svelte:fragment>
-</ConfirmDialogue>
+  {/snippet}
+</ConfirmDialog>

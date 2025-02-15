@@ -10,60 +10,48 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  server-e2e-api:
-    name: Server (e2e-api)
-    runs-on: mich
-    defaults:
-      run:
-        working-directory: ./server
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Run npm install
-        run: npm ci
-
-      - name: Run e2e tests
-        run: npm run e2e:api
-
-  server-e2e-jobs:
-    name: Server (e2e-jobs)
-    runs-on: mich
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          submodules: "recursive"
-
-      - name: Run e2e tests
-        run: make server-e2e-jobs
-
-  doc-tests:
-    name: Docs
+  pre-job:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: ./docs
-
+    outputs:
+      should_run_web: ${{ steps.found_paths.outputs.web == 'true' || steps.should_force.outputs.should_force == 'true' }}
+      should_run_server: ${{ steps.found_paths.outputs.server == 'true' || steps.should_force.outputs.should_force == 'true' }}
+      should_run_cli: ${{ steps.found_paths.outputs.cli == 'true' || steps.should_force.outputs.should_force == 'true' }}
+      should_run_e2e: ${{ steps.found_paths.outputs.e2e == 'true' || steps.should_force.outputs.should_force == 'true' }}
+      should_run_mobile: ${{ steps.found_paths.outputs.mobile == 'true' || steps.should_force.outputs.should_force == 'true' }}
+      should_run_ml: ${{ steps.found_paths.outputs.machine-learning == 'true' || steps.should_force.outputs.should_force == 'true' }}
+      should_run_e2e_web: ${{ steps.found_paths.outputs.e2e == 'true' || steps.found_paths.outputs.web == 'true' || steps.should_force.outputs.should_force == 'true' }}
+      should_run_e2e_server_cli: ${{ steps.found_paths.outputs.e2e == 'true' || steps.found_paths.outputs.server == 'true' || steps.found_paths.outputs.cli == 'true' || steps.should_force.outputs.should_force == 'true' }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+      - id: found_paths
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            web:
+              - 'web/**'
+              - 'i18n/**'
+              - 'open-api/typescript-sdk/**'
+            server:
+              - 'server/**'
+            cli:
+              - 'cli/**'
+              - 'open-api/typescript-sdk/**'
+            e2e:
+              - 'e2e/**'
+            mobile:
+              - 'mobile/**'
+            machine-learning:
+              - 'machine-learning/**'
 
-      - name: Run npm install
-        run: npm ci
-
-      - name: Run formatter
-        run: npm run format
-        if: ${{ !cancelled() }}
-
-      - name: Run build
-        run: npm run build
-        if: ${{ !cancelled() }}
+      - name: Check if we should force jobs to run
+        id: should_force
+        run: echo "should_force=${{ github.event_name == 'workflow_dispatch' }}" >> "$GITHUB_OUTPUT"
 
   server-unit-tests:
-    name: Server
+    name: Test & Lint Server
+    needs: pre-job
+    if: ${{ needs.pre-job.outputs.should_run_server == 'true' }}
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -72,6 +60,11 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: './server/.nvmrc'
 
       - name: Run npm install
         run: npm ci
@@ -88,12 +81,14 @@ jobs:
         run: npm run check
         if: ${{ !cancelled() }}
 
-      - name: Run unit tests & coverage
+      - name: Run small tests & coverage
         run: npm run test:cov
         if: ${{ !cancelled() }}
 
   cli-unit-tests:
-    name: CLI
+    name: Unit Test CLI
+    needs: pre-job
+    if: ${{ needs.pre-job.outputs.should_run_cli == 'true' }}
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -103,16 +98,17 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Run setup typescript-sdk
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: './cli/.nvmrc'
+
+      - name: Setup typescript-sdk
         run: npm ci && npm run build
         working-directory: ./open-api/typescript-sdk
 
-      - name: Run npm install (cli)
+      - name: Install deps
         run: npm ci
-
-      - name: Run npm install (server)
-        run: npm ci
-        working-directory: ./server
 
       - name: Run linter
         run: npm run lint
@@ -130,9 +126,11 @@ jobs:
         run: npm run test:cov
         if: ${{ !cancelled() }}
 
-  cli-e2e-tests:
-    name: CLI (e2e)
-    runs-on: ubuntu-latest
+  cli-unit-tests-win:
+    name: Unit Test CLI (Windows)
+    needs: pre-job
+    if: ${{ needs.pre-job.outputs.should_run_cli == 'true' }}
+    runs-on: windows-latest
     defaults:
       run:
         working-directory: ./cli
@@ -140,25 +138,32 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-        with:
-          submodules: "recursive"
 
-      - name: Run setup typescript-sdk
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: './cli/.nvmrc'
+
+      - name: Setup typescript-sdk
         run: npm ci && npm run build
         working-directory: ./open-api/typescript-sdk
 
-      - name: Run npm install (cli)
+      - name: Install deps
         run: npm ci
 
-      - name: Run npm install (server)
-        run: npm ci
-        working-directory: ./server
+      # Skip linter & formatter in Windows test.
+      - name: Run tsc
+        run: npm run check
+        if: ${{ !cancelled() }}
 
-      - name: Run e2e tests
-        run: npm run test:e2e
+      - name: Run unit tests & coverage
+        run: npm run test:cov
+        if: ${{ !cancelled() }}
 
   web-unit-tests:
-    name: Web
+    name: Test & Lint Web
+    needs: pre-job
+    if: ${{ needs.pre-job.outputs.should_run_web == 'true' }}
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -167,6 +172,11 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: './web/.nvmrc'
 
       - name: Run setup typescript-sdk
         run: npm ci && npm run build
@@ -195,22 +205,168 @@ jobs:
         run: npm run test:cov
         if: ${{ !cancelled() }}
 
+  e2e-tests-lint:
+    name: End-to-End Lint
+    needs: pre-job
+    if: ${{ needs.pre-job.outputs.should_run_e2e == 'true' }}
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./e2e
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: './e2e/.nvmrc'
+
+      - name: Run setup typescript-sdk
+        run: npm ci && npm run build
+        working-directory: ./open-api/typescript-sdk
+        if: ${{ !cancelled() }}
+
+      - name: Install dependencies
+        run: npm ci
+        if: ${{ !cancelled() }}
+
+      - name: Run linter
+        run: npm run lint
+        if: ${{ !cancelled() }}
+
+      - name: Run formatter
+        run: npm run format
+        if: ${{ !cancelled() }}
+
+      - name: Run tsc
+        run: npm run check
+        if: ${{ !cancelled() }}
+
+  medium-tests-server:
+    name: Medium Tests (Server)
+    needs: pre-job
+    if: ${{ needs.pre-job.outputs.should_run_server == 'true' }}
+    runs-on: mich
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          submodules: 'recursive'
+
+      - name: Production build
+        if: ${{ !cancelled() }}
+        run: docker compose -f e2e/docker-compose.yml build
+
+      - name: Run medium tests
+        if: ${{ !cancelled() }}
+        run: make test-medium
+
+  e2e-tests-server-cli:
+    name: End-to-End Tests (Server & CLI)
+    needs: pre-job
+    if: ${{ needs.pre-job.outputs.should_run_e2e_server_cli == 'true' }}
+    runs-on: mich
+    defaults:
+      run:
+        working-directory: ./e2e
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          submodules: 'recursive'
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: './e2e/.nvmrc'
+
+      - name: Run setup typescript-sdk
+        run: npm ci && npm run build
+        working-directory: ./open-api/typescript-sdk
+        if: ${{ !cancelled() }}
+
+      - name: Run setup cli
+        run: npm ci && npm run build
+        working-directory: ./cli
+        if: ${{ !cancelled() }}
+
+      - name: Install dependencies
+        run: npm ci
+        if: ${{ !cancelled() }}
+
+      - name: Docker build
+        run: docker compose build
+        if: ${{ !cancelled() }}
+
+      - name: Run e2e tests (api & cli)
+        run: npm run test
+        if: ${{ !cancelled() }}
+
+  e2e-tests-web:
+    name: End-to-End Tests (Web)
+    needs: pre-job
+    if: ${{ needs.pre-job.outputs.should_run_e2e_web == 'true' }}
+    runs-on: mich
+    defaults:
+      run:
+        working-directory: ./e2e
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          submodules: 'recursive'
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: './e2e/.nvmrc'
+
+      - name: Run setup typescript-sdk
+        run: npm ci && npm run build
+        working-directory: ./open-api/typescript-sdk
+        if: ${{ !cancelled() }}
+
+      - name: Install dependencies
+        run: npm ci
+        if: ${{ !cancelled() }}
+
+      - name: Install Playwright Browsers
+        run: npx playwright install --with-deps chromium
+        if: ${{ !cancelled() }}
+
+      - name: Docker build
+        run: docker compose build
+        if: ${{ !cancelled() }}
+
+      - name: Run e2e tests (web)
+        run: npx playwright test
+        if: ${{ !cancelled() }}
+
   mobile-unit-tests:
-    name: Mobile
+    name: Unit Test Mobile
+    needs: pre-job
+    if: ${{ needs.pre-job.outputs.should_run_mobile == 'true' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - name: Setup Flutter SDK
         uses: subosito/flutter-action@v2
         with:
-          channel: "stable"
-          flutter-version: "3.13.6"
+          channel: 'stable'
+          flutter-version-file: ./mobile/pubspec.yaml
       - name: Run tests
         working-directory: ./mobile
         run: flutter test -j 1
 
   ml-unit-tests:
-    name: Machine Learning
+    name: Unit Test ML
+    needs: pre-job
+    if: ${{ needs.pre-job.outputs.should_run_ml == 'true' }}
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -222,7 +378,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: 3.11
-          cache: "poetry"
+          cache: 'poetry'
       - name: Install dependencies
         run: |
           poetry install --with dev --with cpu
@@ -237,22 +393,51 @@ jobs:
           poetry run mypy --install-types --non-interactive --strict app/
       - name: Run tests and coverage
         run: |
-          poetry run pytest --cov app
+          poetry run pytest app --cov=app --cov-report term-missing
+
+  shellcheck:
+    name: ShellCheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run ShellCheck
+        uses: ludeeus/action-shellcheck@master
+        with:
+          ignore_paths: >-
+            **/open-api/**
+            **/openapi/**
+            **/node_modules/**
 
   generated-api-up-to-date:
     name: OpenAPI Clients
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: './server/.nvmrc'
+
+      - name: Install server dependencies
+        run: npm --prefix=server ci
+
+      - name: Build the app
+        run: npm --prefix=server run build
+
       - name: Run API generation
         run: make open-api
+
       - name: Find file changes
-        uses: tj-actions/verify-changed-files@v13.1
+        uses: tj-actions/verify-changed-files@v20
         id: verify-changed-files
         with:
           files: |
             mobile/openapi
             open-api/typescript-sdk
+            open-api/immich-openapi-specs.json
+
       - name: Verify files have not changed
         if: steps.verify-changed-files.outputs.files_changed == 'true'
         run: |
@@ -265,7 +450,7 @@ jobs:
     runs-on: ubuntu-latest
     services:
       postgres:
-        image: tensorchord/pgvecto-rs:pg14-v0.1.11@sha256:0335a1a22f8c5dd1b697f14f079934f5152eaaa216c09b61e293be285491f8ee
+        image: tensorchord/pgvecto-rs:pg14-v0.2.0@sha256:90724186f0a3517cf6914295b5ab410db9ce23190a2d9d0b9dd6463e3fa298f0
         env:
           POSTGRES_PASSWORD: postgres
           POSTGRES_USER: postgres
@@ -285,6 +470,11 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: './server/.nvmrc'
+
       - name: Install server dependencies
         run: npm ci
 
@@ -299,14 +489,14 @@ jobs:
 
       - name: Generate new migrations
         continue-on-error: true
-        run: npm run typeorm:migrations:generate ./src/infra/migrations/TestMigration
+        run: npm run typeorm:migrations:generate ./src/migrations/TestMigration
 
       - name: Find file changes
-        uses: tj-actions/verify-changed-files@v13.1
+        uses: tj-actions/verify-changed-files@v20
         id: verify-changed-files
         with:
           files: |
-            server/src/infra/migrations/
+            server/src/migrations/
       - name: Verify migration files have not changed
         if: steps.verify-changed-files.outputs.files_changed == 'true'
         run: |
@@ -315,16 +505,16 @@ jobs:
           exit 1
 
       - name: Run SQL generation
-        run: npm run sql:generate
+        run: npm run sync:sql
         env:
           DB_URL: postgres://postgres:postgres@localhost:5432/immich
 
       - name: Find file changes
-        uses: tj-actions/verify-changed-files@v13.1
+        uses: tj-actions/verify-changed-files@v20
         id: verify-changed-sql-files
         with:
           files: |
-            server/src/infra/sql
+            server/src/queries
 
       - name: Verify SQL files have not changed
         if: steps.verify-changed-sql-files.outputs.files_changed == 'true'

@@ -1,10 +1,10 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
-import 'package:immich_mobile/modules/album/providers/album_sort_by_options.provider.dart';
-import 'package:immich_mobile/modules/settings/providers/app_settings.provider.dart';
-import 'package:immich_mobile/modules/settings/services/app_settings.service.dart';
-import 'package:immich_mobile/shared/models/album.dart';
-import 'package:immich_mobile/shared/models/asset.dart';
+import 'package:immich_mobile/providers/album/album_sort_by_options.provider.dart';
+import 'package:immich_mobile/providers/app_settings.provider.dart';
+import 'package:immich_mobile/services/app_settings.service.dart';
+import 'package:immich_mobile/entities/album.entity.dart';
+import 'package:immich_mobile/entities/asset.entity.dart';
 import 'package:isar/isar.dart';
 import 'package:mocktail/mocktail.dart';
 
@@ -147,24 +147,40 @@ void main() {
     group("Album sort - Most Recent", () {
       const mostRecent = AlbumSortMode.mostRecent;
 
-      test("Most Recent - ASC", () {
-        final sorted = mostRecent.sortFn(albums, false);
+      test("Most Recent - DESC", () {
+        final sorted = mostRecent.sortFn(
+          [
+            AlbumStub.create2020end2020Album,
+            AlbumStub.create2020end2022Album,
+            AlbumStub.create2020end2024Album,
+            AlbumStub.create2020end2026Album,
+          ],
+          false,
+        );
         final sortedList = [
-          AlbumStub.sharedWithUser,
-          AlbumStub.twoAsset,
-          AlbumStub.oneAsset,
-          AlbumStub.emptyAlbum,
+          AlbumStub.create2020end2026Album,
+          AlbumStub.create2020end2024Album,
+          AlbumStub.create2020end2022Album,
+          AlbumStub.create2020end2020Album,
         ];
         expect(sorted, orderedEquals(sortedList));
       });
 
-      test("Most Recent - DESC", () {
-        final sorted = mostRecent.sortFn(albums, true);
+      test("Most Recent - ASC", () {
+        final sorted = mostRecent.sortFn(
+          [
+            AlbumStub.create2020end2020Album,
+            AlbumStub.create2020end2022Album,
+            AlbumStub.create2020end2024Album,
+            AlbumStub.create2020end2026Album,
+          ],
+          true,
+        );
         final sortedList = [
-          AlbumStub.emptyAlbum,
-          AlbumStub.oneAsset,
-          AlbumStub.twoAsset,
-          AlbumStub.sharedWithUser,
+          AlbumStub.create2020end2020Album,
+          AlbumStub.create2020end2022Album,
+          AlbumStub.create2020end2024Album,
+          AlbumStub.create2020end2026Album,
         ];
         expect(sorted, orderedEquals(sortedList));
       });
@@ -253,7 +269,7 @@ void main() {
       final listener = ListenerMock<AlbumSortMode>();
       container.listen(
         albumSortByOptionsProvider,
-        listener,
+        listener.call,
         fireImmediately: true,
       );
 
@@ -318,7 +334,7 @@ void main() {
       final listener = ListenerMock<bool>();
       container.listen(
         albumSortOrderProvider,
-        listener,
+        listener.call,
         fireImmediately: true,
       );
 

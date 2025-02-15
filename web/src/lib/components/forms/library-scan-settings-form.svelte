@@ -1,22 +1,28 @@
 <script lang="ts">
-  import { createEventDispatcher } from 'svelte';
-  import Button from '../elements/buttons/button.svelte';
-  import { LibraryType, type LibraryResponseDto } from '@api';
-  import { handleError } from '../../utils/handle-error';
-  import { onMount } from 'svelte';
-  import Icon from '$lib/components/elements/icon.svelte';
-  import LibraryExclusionPatternForm from './library-exclusion-pattern-form.svelte';
+  import { type LibraryResponseDto } from '@immich/sdk';
   import { mdiPencilOutline } from '@mdi/js';
+  import { onMount } from 'svelte';
+  import { handleError } from '../../utils/handle-error';
+  import Button from '../elements/buttons/button.svelte';
+  import LibraryExclusionPatternForm from './library-exclusion-pattern-form.svelte';
+  import CircleIconButton from '$lib/components/elements/buttons/circle-icon-button.svelte';
+  import { t } from 'svelte-i18n';
 
-  export let library: Partial<LibraryResponseDto>;
+  interface Props {
+    library: Partial<LibraryResponseDto>;
+    onCancel: () => void;
+    onSubmit: (library: Partial<LibraryResponseDto>) => void;
+  }
 
-  let addExclusionPattern = false;
-  let editExclusionPattern: number | null = null;
+  let { library = $bindable(), onCancel, onSubmit }: Props = $props();
 
-  let exclusionPatternToAdd: string;
-  let editedExclusionPattern: string;
+  let addExclusionPattern = $state(false);
+  let editExclusionPattern: number | null = $state(null);
 
-  let exclusionPatterns: string[] = [];
+  let exclusionPatternToAdd: string = $state('');
+  let editedExclusionPattern: string = $state('');
+
+  let exclusionPatterns: string[] = $state([]);
 
   onMount(() => {
     if (library.exclusionPatterns) {
@@ -26,19 +32,7 @@
     }
   });
 
-  const dispatch = createEventDispatcher<{
-    cancel: void;
-    submit: { library: Partial<LibraryResponseDto>; type: LibraryType };
-  }>();
-  const handleCancel = () => {
-    dispatch('cancel');
-  };
-
-  const handleSubmit = () => {
-    dispatch('submit', { library, type: LibraryType.External });
-  };
-
-  const handleAddExclusionPattern = async () => {
+  const handleAddExclusionPattern = () => {
     if (!addExclusionPattern) {
       return;
     }
@@ -48,17 +42,20 @@
     }
 
     try {
-      library.exclusionPatterns.push(exclusionPatternToAdd);
-      exclusionPatternToAdd = '';
-
-      exclusionPatterns = library.exclusionPatterns;
-      addExclusionPattern = false;
+      // Check so that exclusion pattern isn't duplicated
+      if (!library.exclusionPatterns.includes(exclusionPatternToAdd)) {
+        library.exclusionPatterns.push(exclusionPatternToAdd);
+        exclusionPatterns = library.exclusionPatterns;
+      }
     } catch (error) {
-      handleError(error, 'Unable to add exclude pattern');
+      handleError(error, $t('errors.unable_to_add_exclusion_pattern'));
+    } finally {
+      exclusionPatternToAdd = '';
+      addExclusionPattern = false;
     }
   };
 
-  const handleEditExclusionPattern = async () => {
+  const handleEditExclusionPattern = () => {
     if (editExclusionPattern === null) {
       return;
     }
@@ -71,13 +68,13 @@
       library.exclusionPatterns[editExclusionPattern] = editedExclusionPattern;
       exclusionPatterns = library.exclusionPatterns;
     } catch (error) {
-      handleError(error, 'Unable to edit exclude pattern');
+      handleError(error, $t('errors.unable_to_edit_exclusion_pattern'));
     } finally {
       editExclusionPattern = null;
     }
   };
 
-  const handleDeleteExclusionPattern = async () => {
+  const handleDeleteExclusionPattern = () => {
     if (editExclusionPattern === null) {
       return;
     }
@@ -91,38 +88,41 @@
       library.exclusionPatterns = library.exclusionPatterns.filter((path) => path != pathToDelete);
       exclusionPatterns = library.exclusionPatterns;
     } catch (error) {
-      handleError(error, 'Unable to delete exclude pattern');
+      handleError(error, $t('errors.unable_to_delete_exclusion_pattern'));
     } finally {
       editExclusionPattern = null;
     }
+  };
+
+  const onsubmit = (event: Event) => {
+    event.preventDefault();
+    onSubmit(library);
   };
 </script>
 
 {#if addExclusionPattern}
   <LibraryExclusionPatternForm
-    submitText="Add"
+    submitText={$t('add')}
     bind:exclusionPattern={exclusionPatternToAdd}
-    on:submit={handleAddExclusionPattern}
-    on:cancel={() => {
-      addExclusionPattern = false;
-    }}
+    {exclusionPatterns}
+    onSubmit={handleAddExclusionPattern}
+    onCancel={() => (addExclusionPattern = false)}
   />
 {/if}
 
-{#if editExclusionPattern != null}
+{#if editExclusionPattern != undefined}
   <LibraryExclusionPatternForm
-    submitText="Save"
-    canDelete={true}
+    submitText={$t('save')}
+    isEditing={true}
     bind:exclusionPattern={editedExclusionPattern}
-    on:submit={handleEditExclusionPattern}
-    on:delete={handleDeleteExclusionPattern}
-    on:cancel={() => {
-      editExclusionPattern = null;
-    }}
+    {exclusionPatterns}
+    onSubmit={handleEditExclusionPattern}
+    onDelete={handleDeleteExclusionPattern}
+    onCancel={() => (editExclusionPattern = null)}
   />
 {/if}
 
-<form on:submit|preventDefault={() => handleSubmit()} autocomplete="off" class="m-4 flex flex-col gap-4">
+<form {onsubmit} autocomplete="off" class="m-4 flex flex-col gap-4">
   <table class="w-full text-left">
     <tbody class="block w-full overflow-y-auto rounded-md border dark:border-immich-dark-gray">
       {#each exclusionPatterns as exclusionPattern, listIndex}
@@ -134,17 +134,17 @@
           }`}
         >
           <td class="w-3/4 text-ellipsis px-4 text-sm">{exclusionPattern}</td>
-          <td class="w-1/4 text-ellipsis px-4 text-sm">
-            <button
-              type="button"
-              on:click={() => {
+          <td class="w-1/4 text-ellipsis flex justify-center">
+            <CircleIconButton
+              color="primary"
+              icon={mdiPencilOutline}
+              title={$t('edit_exclusion_pattern')}
+              size="16"
+              onclick={() => {
                 editExclusionPattern = listIndex;
                 editedExclusionPattern = exclusionPattern;
               }}
-              class="rounded-full bg-immich-primary p-3 text-gray-100 transition-all duration-150 hover:bg-immich-primary/75 dark:bg-immich-dark-primary dark:text-gray-700"
-            >
-              <Icon path={mdiPencilOutline} size="16" />
-            </button>
+            />
           </td>
         </tr>
       {/each}
@@ -157,15 +157,15 @@
       >
         <td class="w-3/4 text-ellipsis px-4 text-sm">
           {#if exclusionPatterns.length === 0}
-            No pattern added
+            {$t('admin.no_pattern_added')}
           {/if}
         </td>
         <td class="w-1/4 text-ellipsis px-4 text-sm"
           ><Button
             size="sm"
-            on:click={() => {
+            onclick={() => {
               addExclusionPattern = true;
-            }}>Add Exclusion Pattern</Button
+            }}>{$t('add_exclusion_pattern')}</Button
           ></td
         ></tr
       >
@@ -173,7 +173,7 @@
   </table>
 
   <div class="flex w-full justify-end gap-4">
-    <Button size="sm" color="gray" on:click={() => handleCancel()}>Cancel</Button>
-    <Button size="sm" type="submit">Save</Button>
+    <Button size="sm" color="gray" onclick={onCancel}>{$t('cancel')}</Button>
+    <Button size="sm" type="submit">{$t('save')}</Button>
   </div>
 </form>

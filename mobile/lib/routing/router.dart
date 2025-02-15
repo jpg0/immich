@@ -1,71 +1,79 @@
 import 'package:auto_route/auto_route.dart';
 import 'package:flutter/material.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
-import 'package:immich_mobile/modules/activities/views/activities_page.dart';
-import 'package:immich_mobile/modules/album/models/asset_selection_page_result.model.dart';
-import 'package:immich_mobile/modules/album/views/album_options_part.dart';
-import 'package:immich_mobile/modules/album/views/album_viewer_page.dart';
-import 'package:immich_mobile/modules/album/views/asset_selection_page.dart';
-import 'package:immich_mobile/modules/album/views/create_album_page.dart';
-import 'package:immich_mobile/modules/album/views/library_page.dart';
-import 'package:immich_mobile/modules/backup/views/backup_options_page.dart';
-import 'package:immich_mobile/modules/map/views/map_location_picker_page.dart';
-import 'package:immich_mobile/modules/map/views/map_page.dart';
-import 'package:immich_mobile/modules/memories/models/memory.dart';
-import 'package:immich_mobile/modules/memories/views/memory_page.dart';
-import 'package:immich_mobile/modules/partner/views/partner_detail_page.dart';
-import 'package:immich_mobile/modules/partner/views/partner_page.dart';
-import 'package:immich_mobile/modules/album/views/select_additional_user_for_sharing_page.dart';
-import 'package:immich_mobile/modules/album/views/select_user_for_sharing_page.dart';
-import 'package:immich_mobile/modules/album/views/sharing_page.dart';
-import 'package:immich_mobile/modules/archive/views/archive_page.dart';
-import 'package:immich_mobile/modules/asset_viewer/views/gallery_viewer.dart';
-import 'package:immich_mobile/modules/asset_viewer/views/video_viewer_page.dart';
-import 'package:immich_mobile/modules/backup/views/album_preview_page.dart';
-import 'package:immich_mobile/modules/backup/views/backup_album_selection_page.dart';
-import 'package:immich_mobile/modules/backup/views/backup_controller_page.dart';
-import 'package:immich_mobile/modules/backup/views/failed_backup_status_page.dart';
-import 'package:immich_mobile/modules/favorite/views/favorites_page.dart';
-import 'package:immich_mobile/modules/home/views/home_page.dart';
-import 'package:immich_mobile/modules/login/views/change_password_page.dart';
-import 'package:immich_mobile/modules/login/views/login_page.dart';
-import 'package:immich_mobile/modules/onboarding/providers/gallery_permission.provider.dart';
-import 'package:immich_mobile/modules/onboarding/views/permission_onboarding_page.dart';
-import 'package:immich_mobile/modules/shared_link/models/shared_link.dart';
-import 'package:immich_mobile/modules/shared_link/views/shared_link_edit_page.dart';
-import 'package:immich_mobile/modules/shared_link/views/shared_link_page.dart';
-import 'package:immich_mobile/modules/trash/views/trash_page.dart';
-import 'package:immich_mobile/modules/search/views/all_motion_videos_page.dart';
-import 'package:immich_mobile/modules/search/views/all_people_page.dart';
-import 'package:immich_mobile/modules/search/views/all_videos_page.dart';
-import 'package:immich_mobile/modules/search/views/curated_location_page.dart';
-import 'package:immich_mobile/modules/search/views/person_result_page.dart';
-import 'package:immich_mobile/modules/search/views/recently_added_page.dart';
-import 'package:immich_mobile/modules/search/views/search_page.dart';
-import 'package:immich_mobile/modules/search/views/search_result_page.dart';
-import 'package:immich_mobile/modules/settings/views/settings_page.dart';
+import 'package:immich_mobile/entities/album.entity.dart';
+import 'package:immich_mobile/entities/asset.entity.dart';
+import 'package:immich_mobile/entities/logger_message.entity.dart';
+import 'package:immich_mobile/entities/user.entity.dart';
+import 'package:immich_mobile/models/memories/memory.model.dart';
+import 'package:immich_mobile/models/search/search_filter.model.dart';
+import 'package:immich_mobile/models/shared_link/shared_link.model.dart';
+import 'package:immich_mobile/models/upload/share_intent_attachment.model.dart';
+import 'package:immich_mobile/pages/backup/album_preview.page.dart';
+import 'package:immich_mobile/pages/backup/backup_album_selection.page.dart';
+import 'package:immich_mobile/pages/backup/backup_controller.page.dart';
+import 'package:immich_mobile/pages/backup/backup_options.page.dart';
+import 'package:immich_mobile/pages/backup/failed_backup_status.page.dart';
+import 'package:immich_mobile/pages/albums/albums.page.dart';
+import 'package:immich_mobile/pages/common/native_video_viewer.page.dart';
+import 'package:immich_mobile/pages/library/local_albums.page.dart';
+import 'package:immich_mobile/pages/library/people/people_collection.page.dart';
+import 'package:immich_mobile/pages/library/places/places_collection.page.dart';
+import 'package:immich_mobile/pages/library/library.page.dart';
+import 'package:immich_mobile/pages/common/activities.page.dart';
+import 'package:immich_mobile/pages/album/album_additional_shared_user_selection.page.dart';
+import 'package:immich_mobile/pages/album/album_asset_selection.page.dart';
+import 'package:immich_mobile/pages/album/album_options.page.dart';
+import 'package:immich_mobile/pages/album/album_shared_user_selection.page.dart';
+import 'package:immich_mobile/pages/album/album_viewer.page.dart';
+import 'package:immich_mobile/pages/common/app_log.page.dart';
+import 'package:immich_mobile/pages/common/app_log_detail.page.dart';
+import 'package:immich_mobile/pages/common/create_album.page.dart';
+import 'package:immich_mobile/pages/common/gallery_viewer.page.dart';
+import 'package:immich_mobile/pages/common/headers_settings.page.dart';
+import 'package:immich_mobile/pages/common/settings.page.dart';
+import 'package:immich_mobile/pages/common/splash_screen.page.dart';
+import 'package:immich_mobile/pages/common/tab_controller.page.dart';
+import 'package:immich_mobile/pages/editing/edit.page.dart';
+import 'package:immich_mobile/pages/editing/crop.page.dart';
+import 'package:immich_mobile/pages/editing/filter.page.dart';
+import 'package:immich_mobile/pages/library/archive.page.dart';
+import 'package:immich_mobile/pages/library/favorite.page.dart';
+import 'package:immich_mobile/pages/library/trash.page.dart';
+import 'package:immich_mobile/pages/login/change_password.page.dart';
+import 'package:immich_mobile/pages/login/login.page.dart';
+import 'package:immich_mobile/pages/onboarding/permission_onboarding.page.dart';
+import 'package:immich_mobile/pages/photos/memory.page.dart';
+import 'package:immich_mobile/pages/photos/photos.page.dart';
+import 'package:immich_mobile/pages/search/all_motion_videos.page.dart';
+import 'package:immich_mobile/pages/search/all_people.page.dart';
+import 'package:immich_mobile/pages/search/all_places.page.dart';
+import 'package:immich_mobile/pages/search/all_videos.page.dart';
+import 'package:immich_mobile/pages/search/map/map.page.dart';
+import 'package:immich_mobile/pages/search/map/map_location_picker.page.dart';
+import 'package:immich_mobile/pages/search/person_result.page.dart';
+import 'package:immich_mobile/pages/search/recently_added.page.dart';
+import 'package:immich_mobile/pages/search/search.page.dart';
+import 'package:immich_mobile/pages/library/partner/partner.page.dart';
+import 'package:immich_mobile/pages/library/partner/partner_detail.page.dart';
+import 'package:immich_mobile/pages/library/shared_link/shared_link.page.dart';
+import 'package:immich_mobile/pages/library/shared_link/shared_link_edit.page.dart';
+import 'package:immich_mobile/pages/share_intent/share_intent.page.dart';
+import 'package:immich_mobile/providers/api.provider.dart';
+import 'package:immich_mobile/providers/gallery_permission.provider.dart';
 import 'package:immich_mobile/routing/auth_guard.dart';
+import 'package:immich_mobile/routing/backup_permission_guard.dart';
 import 'package:immich_mobile/routing/custom_transition_builders.dart';
 import 'package:immich_mobile/routing/duplicate_guard.dart';
-import 'package:immich_mobile/routing/backup_permission_guard.dart';
-import 'package:immich_mobile/shared/models/asset.dart';
-import 'package:immich_mobile/shared/models/album.dart';
-import 'package:immich_mobile/shared/models/logger_message.model.dart';
-import 'package:immich_mobile/shared/models/user.dart';
-import 'package:immich_mobile/shared/providers/api.provider.dart';
-import 'package:immich_mobile/shared/services/api.service.dart';
-import 'package:immich_mobile/shared/views/app_log_detail_page.dart';
-import 'package:immich_mobile/shared/views/app_log_page.dart';
-import 'package:immich_mobile/shared/views/splash_screen.dart';
-import 'package:immich_mobile/shared/views/tab_controller_page.dart';
+import 'package:immich_mobile/services/api.service.dart';
+import 'package:immich_mobile/widgets/asset_grid/asset_grid_data_structure.dart';
 import 'package:isar/isar.dart';
 import 'package:maplibre_gl/maplibre_gl.dart';
-import 'package:photo_manager/photo_manager.dart' hide LatLng;
 
 part 'router.gr.dart';
 
 @AutoRouterConfig(replaceInRouteName: 'Page,Route')
-class AppRouter extends _$AppRouter {
+class AppRouter extends RootStackRouter {
   late final AuthGuard _authGuard;
   late final DuplicateGuard _duplicateGuard;
   late final BackupPermissionGuard _backupPermissionGuard;
@@ -91,21 +99,30 @@ class AppRouter extends _$AppRouter {
     ),
     AutoRoute(page: LoginRoute.page, guards: [_duplicateGuard]),
     AutoRoute(page: ChangePasswordRoute.page),
+    AutoRoute(
+      page: SearchRoute.page,
+      guards: [_authGuard, _duplicateGuard],
+      maintainState: false,
+    ),
     CustomRoute(
       page: TabControllerRoute.page,
       guards: [_authGuard, _duplicateGuard],
       children: [
-        AutoRoute(page: HomeRoute.page, guards: [_authGuard, _duplicateGuard]),
+        AutoRoute(
+          page: PhotosRoute.page,
+          guards: [_authGuard, _duplicateGuard],
+        ),
         AutoRoute(
           page: SearchRoute.page,
           guards: [_authGuard, _duplicateGuard],
-        ),
-        AutoRoute(
-          page: SharingRoute.page,
-          guards: [_authGuard, _duplicateGuard],
+          maintainState: false,
         ),
         AutoRoute(
           page: LibraryRoute.page,
+          guards: [_authGuard, _duplicateGuard],
+        ),
+        AutoRoute(
+          page: AlbumsRoute.page,
           guards: [_authGuard, _duplicateGuard],
         ),
       ],
@@ -117,26 +134,25 @@ class AppRouter extends _$AppRouter {
       transitionsBuilder: CustomTransitionsBuilders.zoomedPage,
     ),
     AutoRoute(
-      page: VideoViewerRoute.page,
-      guards: [_authGuard, _duplicateGuard],
-    ),
-    AutoRoute(
       page: BackupControllerRoute.page,
       guards: [_authGuard, _duplicateGuard, _backupPermissionGuard],
     ),
     AutoRoute(
-      page: SearchResultRoute.page,
-      guards: [_authGuard, _duplicateGuard],
-    ),
-    AutoRoute(
-      page: CuratedLocationRoute.page,
+      page: AllPlacesRoute.page,
       guards: [_authGuard, _duplicateGuard],
     ),
     AutoRoute(
       page: CreateAlbumRoute.page,
       guards: [_authGuard, _duplicateGuard],
     ),
-    AutoRoute(page: FavoritesRoute.page, guards: [_authGuard, _duplicateGuard]),
+    AutoRoute(page: EditImageRoute.page),
+    AutoRoute(page: CropImageRoute.page),
+    AutoRoute(page: FilterImageRoute.page),
+    CustomRoute(
+      page: FavoritesRoute.page,
+      guards: [_authGuard, _duplicateGuard],
+      transitionsBuilder: TransitionsBuilders.slideLeft,
+    ),
     AutoRoute(page: AllVideosRoute.page, guards: [_authGuard, _duplicateGuard]),
     AutoRoute(
       page: AllMotionPhotosRoute.page,
@@ -147,12 +163,12 @@ class AppRouter extends _$AppRouter {
       guards: [_authGuard, _duplicateGuard],
     ),
     CustomRoute(
-      page: AssetSelectionRoute.page,
+      page: AlbumAssetSelectionRoute.page,
       guards: [_authGuard, _duplicateGuard],
       transitionsBuilder: TransitionsBuilders.slideBottom,
     ),
     CustomRoute(
-      page: SelectUserForSharingRoute.page,
+      page: AlbumSharedUserSelectionRoute.page,
       guards: [_authGuard, _duplicateGuard],
       transitionsBuilder: TransitionsBuilders.slideBottom,
     ),
@@ -161,7 +177,7 @@ class AppRouter extends _$AppRouter {
       guards: [_authGuard, _duplicateGuard],
     ),
     CustomRoute(
-      page: SelectAdditionalUserForSharingRoute.page,
+      page: AlbumAdditionalSharedUserSelectionRoute.page,
       guards: [_authGuard, _duplicateGuard],
       transitionsBuilder: TransitionsBuilders.slideBottom,
     ),
@@ -179,10 +195,19 @@ class AppRouter extends _$AppRouter {
       transitionsBuilder: TransitionsBuilders.slideBottom,
     ),
     AutoRoute(page: SettingsRoute.page, guards: [_duplicateGuard]),
+    AutoRoute(page: SettingsSubRoute.page, guards: [_duplicateGuard]),
     AutoRoute(page: AppLogRoute.page, guards: [_duplicateGuard]),
     AutoRoute(page: AppLogDetailRoute.page, guards: [_duplicateGuard]),
-    AutoRoute(page: ArchiveRoute.page, guards: [_authGuard, _duplicateGuard]),
-    AutoRoute(page: PartnerRoute.page, guards: [_authGuard, _duplicateGuard]),
+    CustomRoute(
+      page: ArchiveRoute.page,
+      guards: [_authGuard, _duplicateGuard],
+      transitionsBuilder: TransitionsBuilders.slideLeft,
+    ),
+    CustomRoute(
+      page: PartnerRoute.page,
+      guards: [_authGuard, _duplicateGuard],
+      transitionsBuilder: TransitionsBuilders.slideLeft,
+    ),
     AutoRoute(
       page: PartnerDetailRoute.page,
       guards: [_authGuard, _duplicateGuard],
@@ -198,10 +223,15 @@ class AppRouter extends _$AppRouter {
       page: AlbumOptionsRoute.page,
       guards: [_authGuard, _duplicateGuard],
     ),
-    AutoRoute(page: TrashRoute.page, guards: [_authGuard, _duplicateGuard]),
-    AutoRoute(
+    CustomRoute(
+      page: TrashRoute.page,
+      guards: [_authGuard, _duplicateGuard],
+      transitionsBuilder: TransitionsBuilders.slideLeft,
+    ),
+    CustomRoute(
       page: SharedLinkRoute.page,
       guards: [_authGuard, _duplicateGuard],
+      transitionsBuilder: TransitionsBuilders.slideLeft,
     ),
     AutoRoute(
       page: SharedLinkEditRoute.page,
@@ -219,6 +249,38 @@ class AppRouter extends _$AppRouter {
     ),
     AutoRoute(
       page: BackupOptionsRoute.page,
+      guards: [_authGuard, _duplicateGuard],
+    ),
+    AutoRoute(
+      page: HeaderSettingsRoute.page,
+      guards: [_duplicateGuard],
+    ),
+    CustomRoute(
+      page: PeopleCollectionRoute.page,
+      guards: [_authGuard, _duplicateGuard],
+      transitionsBuilder: TransitionsBuilders.slideLeft,
+    ),
+    CustomRoute(
+      page: AlbumsRoute.page,
+      guards: [_authGuard, _duplicateGuard],
+      transitionsBuilder: TransitionsBuilders.slideLeft,
+    ),
+    CustomRoute(
+      page: LocalAlbumsRoute.page,
+      guards: [_authGuard, _duplicateGuard],
+      transitionsBuilder: TransitionsBuilders.slideLeft,
+    ),
+    CustomRoute(
+      page: PlacesCollectionRoute.page,
+      guards: [_authGuard, _duplicateGuard],
+      transitionsBuilder: TransitionsBuilders.slideLeft,
+    ),
+    AutoRoute(
+      page: NativeVideoViewerRoute.page,
+      guards: [_authGuard, _duplicateGuard],
+    ),
+    AutoRoute(
+      page: ShareIntentRoute.page,
       guards: [_authGuard, _duplicateGuard],
     ),
   ];

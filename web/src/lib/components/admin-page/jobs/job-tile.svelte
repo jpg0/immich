@@ -1,41 +1,57 @@
 <script lang="ts">
-  import { locale } from '$lib/stores/preferences.store';
-  import { createEventDispatcher } from 'svelte';
-  import { JobCommand, type JobCommandDto, type JobCountsDto, type QueueStatusDto } from '@api';
   import Badge from '$lib/components/elements/badge.svelte';
-  import JobTileButton from './job-tile-button.svelte';
-  import JobTileStatus from './job-tile-status.svelte';
-  import Button from '$lib/components/elements/buttons/button.svelte';
+  import CircleIconButton from '$lib/components/elements/buttons/circle-icon-button.svelte';
   import Icon from '$lib/components/elements/icon.svelte';
+  import { locale } from '$lib/stores/preferences.store';
+  import { JobCommand, type JobCommandDto, type JobCountsDto, type QueueStatusDto } from '@immich/sdk';
   import {
     mdiAlertCircle,
     mdiAllInclusive,
     mdiClose,
     mdiFastForward,
+    mdiImageRefreshOutline,
     mdiPause,
     mdiPlay,
     mdiSelectionSearch,
   } from '@mdi/js';
+  import { type Component } from 'svelte';
+  import { t } from 'svelte-i18n';
+  import JobTileButton from './job-tile-button.svelte';
+  import JobTileStatus from './job-tile-status.svelte';
 
-  export let title: string;
-  export let subtitle: string | undefined = undefined;
-  export let jobCounts: JobCountsDto;
-  export let queueStatus: QueueStatusDto;
-  export let allowForceCommand = true;
-  export let icon: string;
-  export let disabled = false;
+  interface Props {
+    title: string;
+    subtitle: string | undefined;
+    description: Component | undefined;
+    jobCounts: JobCountsDto;
+    queueStatus: QueueStatusDto;
+    icon: string;
+    disabled?: boolean;
+    allText: string | undefined;
+    refreshText: string | undefined;
+    missingText: string;
+    onCommand: (command: JobCommandDto) => void;
+  }
 
-  export let allText: string;
-  export let missingText: string;
+  let {
+    title,
+    subtitle,
+    description,
+    jobCounts,
+    queueStatus,
+    icon,
+    disabled = false,
+    allText,
+    refreshText,
+    missingText,
+    onCommand,
+  }: Props = $props();
 
-  const slots = $$props.$$slots;
-
-  $: waitingCount = jobCounts.waiting + jobCounts.paused + jobCounts.delayed;
-  $: isIdle = !queueStatus.isActive && !queueStatus.isPaused;
+  let waitingCount = $derived(jobCounts.waiting + jobCounts.paused + jobCounts.delayed);
+  let isIdle = $derived(!queueStatus.isActive && !queueStatus.isPaused);
+  let multipleButtons = $derived(allText || refreshText);
 
   const commonClasses = 'flex place-items-center justify-between w-full py-2 sm:py-4 pr-4 pl-6';
-
-  const dispatch = createEventDispatcher<{ command: JobCommandDto }>();
 </script>
 
 <div
@@ -43,9 +59,9 @@
 >
   <div class="flex w-full flex-col">
     {#if queueStatus.isPaused}
-      <JobTileStatus color="warning">Paused</JobTileStatus>
+      <JobTileStatus color="warning">{$t('paused')}</JobTileStatus>
     {:else if queueStatus.isActive}
-      <JobTileStatus color="success">Active</JobTileStatus>
+      <JobTileStatus color="success">{$t('active')}</JobTileStatus>
     {/if}
     <div class="flex flex-col gap-2 p-5 sm:p-7 md:p-9">
       <div class="flex items-center gap-4 text-xl font-semibold text-immich-primary dark:text-immich-dark-primary">
@@ -56,22 +72,25 @@
         <div class="flex gap-2">
           {#if jobCounts.failed > 0}
             <Badge color="primary">
-              <span class="text-sm">
-                {jobCounts.failed.toLocaleString($locale)} failed
-              </span>
-              <Button
-                size="tiny"
-                shadow={false}
-                on:click={() => dispatch('command', { command: JobCommand.ClearFailed, force: false })}
-              >
-                <Icon path={mdiClose} size="18" />
-              </Button>
+              <div class="flex flex-row gap-1">
+                <span class="text-sm">
+                  {$t('admin.jobs_failed', { values: { jobCount: jobCounts.failed.toLocaleString($locale) } })}
+                </span>
+                <CircleIconButton
+                  color="primary"
+                  icon={mdiClose}
+                  title={$t('clear_message')}
+                  size="12"
+                  padding="1"
+                  onclick={() => onCommand({ command: JobCommand.ClearFailed, force: false })}
+                />
+              </div>
             </Badge>
           {/if}
           {#if jobCounts.delayed > 0}
             <Badge color="secondary">
               <span class="text-sm">
-                {jobCounts.delayed.toLocaleString($locale)} delayed
+                {$t('admin.jobs_delayed', { values: { jobCount: jobCounts.delayed.toLocaleString($locale) } })}
               </span>
             </Badge>
           {/if}
@@ -82,9 +101,10 @@
         <div class="whitespace-pre-line text-sm dark:text-white">{subtitle}</div>
       {/if}
 
-      {#if slots?.description}
+      {#if description}
+        {@const SvelteComponent = description}
         <div class="text-sm dark:text-white">
-          <slot name="description" />
+          <SvelteComponent />
         </div>
       {/if}
 
@@ -92,7 +112,7 @@
         <div
           class="{commonClasses} rounded-t-lg bg-immich-primary text-white dark:bg-immich-dark-primary dark:text-immich-dark-gray sm:rounded-l-lg sm:rounded-r-none"
         >
-          <p>Active</p>
+          <p>{$t('active')}</p>
           <p class="text-2xl">
             {jobCounts.active.toLocaleString($locale)}
           </p>
@@ -104,7 +124,7 @@
           <p class="text-2xl">
             {waitingCount.toLocaleString($locale)}
           </p>
-          <p>Waiting</p>
+          <p>{$t('waiting')}</p>
         </div>
       </div>
     </div>
@@ -114,51 +134,58 @@
       <JobTileButton
         disabled={true}
         color="light-gray"
-        on:click={() => dispatch('command', { command: JobCommand.Start, force: false })}
+        onClick={() => onCommand({ command: JobCommand.Start, force: false })}
       >
-        <Icon path={mdiAlertCircle} size="36" /> DISABLED
+        <Icon path={mdiAlertCircle} size="36" />
+        {$t('disabled').toUpperCase()}
       </JobTileButton>
-    {:else if !isIdle}
+    {/if}
+
+    {#if !disabled && !isIdle}
       {#if waitingCount > 0}
-        <JobTileButton color="gray" on:click={() => dispatch('command', { command: JobCommand.Empty, force: false })}>
-          <Icon path={mdiClose} size="24" /> CLEAR
+        <JobTileButton color="gray" onClick={() => onCommand({ command: JobCommand.Empty, force: false })}>
+          <Icon path={mdiClose} size="24" />
+          {$t('clear').toUpperCase()}
         </JobTileButton>
       {/if}
       {#if queueStatus.isPaused}
         {@const size = waitingCount > 0 ? '24' : '48'}
-        <JobTileButton
-          color="light-gray"
-          on:click={() => dispatch('command', { command: JobCommand.Resume, force: false })}
-        >
+        <JobTileButton color="light-gray" onClick={() => onCommand({ command: JobCommand.Resume, force: false })}>
           <!-- size property is not reactive, so have to use width and height -->
-          <Icon path={mdiFastForward} {size} /> RESUME
+          <Icon path={mdiFastForward} {size} />
+          {$t('resume').toUpperCase()}
         </JobTileButton>
       {:else}
-        <JobTileButton
-          color="light-gray"
-          on:click={() => dispatch('command', { command: JobCommand.Pause, force: false })}
-        >
-          <Icon path={mdiPause} size="24" /> PAUSE
+        <JobTileButton color="light-gray" onClick={() => onCommand({ command: JobCommand.Pause, force: false })}>
+          <Icon path={mdiPause} size="24" />
+          {$t('pause').toUpperCase()}
         </JobTileButton>
       {/if}
-    {:else if allowForceCommand}
-      <JobTileButton color="gray" on:click={() => dispatch('command', { command: JobCommand.Start, force: true })}>
-        <Icon path={mdiAllInclusive} size="24" />
-        {allText}
-      </JobTileButton>
-      <JobTileButton
-        color="light-gray"
-        on:click={() => dispatch('command', { command: JobCommand.Start, force: false })}
-      >
+    {/if}
+
+    {#if !disabled && multipleButtons && isIdle}
+      {#if allText}
+        <JobTileButton color="dark-gray" onClick={() => onCommand({ command: JobCommand.Start, force: true })}>
+          <Icon path={mdiAllInclusive} size="24" />
+          {allText}
+        </JobTileButton>
+      {/if}
+      {#if refreshText}
+        <JobTileButton color="gray" onClick={() => onCommand({ command: JobCommand.Start, force: undefined })}>
+          <Icon path={mdiImageRefreshOutline} size="24" />
+          {refreshText}
+        </JobTileButton>
+      {/if}
+      <JobTileButton color="light-gray" onClick={() => onCommand({ command: JobCommand.Start, force: false })}>
         <Icon path={mdiSelectionSearch} size="24" />
         {missingText}
       </JobTileButton>
-    {:else}
-      <JobTileButton
-        color="light-gray"
-        on:click={() => dispatch('command', { command: JobCommand.Start, force: false })}
-      >
-        <Icon path={mdiPlay} size="48" /> START
+    {/if}
+
+    {#if !disabled && !multipleButtons && isIdle}
+      <JobTileButton color="light-gray" onClick={() => onCommand({ command: JobCommand.Start, force: false })}>
+        <Icon path={mdiPlay} size="48" />
+        {$t('start').toUpperCase()}
       </JobTileButton>
     {/if}
   </div>

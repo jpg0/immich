@@ -1,27 +1,25 @@
-import { IAlbumRepository } from '@app/domain';
+import { AlbumRepository } from 'src/repositories/album.repository';
+import { RepositoryInterface } from 'src/types';
+import { Mocked, vitest } from 'vitest';
 
-export const newAlbumRepositoryMock = (): jest.Mocked<IAlbumRepository> => {
+export const newAlbumRepositoryMock = (): Mocked<RepositoryInterface<AlbumRepository>> => {
   return {
-    getById: jest.fn(),
-    getByIds: jest.fn(),
-    getByAssetId: jest.fn(),
-    getMetadataForIds: jest.fn(),
-    getInvalidThumbnail: jest.fn(),
-    getOwned: jest.fn(),
-    getShared: jest.fn(),
-    getNotShared: jest.fn(),
-    restoreAll: jest.fn(),
-    softDeleteAll: jest.fn(),
-    deleteAll: jest.fn(),
-    getAll: jest.fn(),
-    addAssets: jest.fn(),
-    removeAsset: jest.fn(),
-    removeAssets: jest.fn(),
-    getAssetIds: jest.fn(),
-    hasAsset: jest.fn(),
-    create: jest.fn(),
-    update: jest.fn(),
-    delete: jest.fn(),
-    updateThumbnails: jest.fn(),
+    getById: vitest.fn(),
+    getByAssetId: vitest.fn(),
+    getMetadataForIds: vitest.fn(),
+    getOwned: vitest.fn(),
+    getShared: vitest.fn(),
+    getNotShared: vitest.fn(),
+    restoreAll: vitest.fn(),
+    softDeleteAll: vitest.fn(),
+    deleteAll: vitest.fn(),
+    addAssetIds: vitest.fn(),
+    removeAsset: vitest.fn(),
+    removeAssetIds: vitest.fn(),
+    getAssetIds: vitest.fn(),
+    create: vitest.fn(),
+    update: vitest.fn(),
+    delete: vitest.fn(),
+    updateThumbnails: vitest.fn(),
   };
 };

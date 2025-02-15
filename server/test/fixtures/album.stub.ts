@@ -1,7 +1,8 @@
-import { AlbumEntity } from '@app/infra/entities';
-import { assetStub } from './asset.stub';
-import { authStub } from './auth.stub';
-import { userStub } from './user.stub';
+import { AlbumEntity } from 'src/entities/album.entity';
+import { AlbumUserRole, AssetOrder } from 'src/enum';
+import { assetStub } from 'test/fixtures/asset.stub';
+import { authStub } from 'test/fixtures/auth.stub';
+import { userStub } from 'test/fixtures/user.stub';
 
 export const albumStub = {
   empty: Object.freeze<AlbumEntity>({
@@ -17,8 +18,9 @@ export const albumStub = {
     updatedAt: new Date(),
     deletedAt: null,
     sharedLinks: [],
-    sharedUsers: [],
+    albumUsers: [],
     isActivityEnabled: true,
+    order: AssetOrder.DESC,
   }),
   sharedWithUser: Object.freeze<AlbumEntity>({
     id: 'album-2',
@@ -33,8 +35,17 @@ export const albumStub = {
     updatedAt: new Date(),
     deletedAt: null,
     sharedLinks: [],
-    sharedUsers: [userStub.user1],
+    albumUsers: [
+      {
+        user: userStub.user1,
+        album: undefined as unknown as AlbumEntity,
+        role: AlbumUserRole.EDITOR,
+        userId: userStub.user1.id,
+        albumId: 'album-2',
+      },
+    ],
     isActivityEnabled: true,
+    order: AssetOrder.DESC,
   }),
   sharedWithMultiple: Object.freeze<AlbumEntity>({
     id: 'album-3',
@@ -49,8 +60,24 @@ export const albumStub = {
     updatedAt: new Date(),
     deletedAt: null,
     sharedLinks: [],
-    sharedUsers: [userStub.user1, userStub.user2],
+    albumUsers: [
+      {
+        user: userStub.user1,
+        album: undefined as unknown as AlbumEntity,
+        role: AlbumUserRole.EDITOR,
+        userId: userStub.user1.id,
+        albumId: 'album-3',
+      },
+      {
+        user: userStub.user2,
+        album: undefined as unknown as AlbumEntity,
+        role: AlbumUserRole.EDITOR,
+        userId: userStub.user2.id,
+        albumId: 'album-3',
+      },
+    ],
     isActivityEnabled: true,
+    order: AssetOrder.DESC,
   }),
   sharedWithAdmin: Object.freeze<AlbumEntity>({
     id: 'album-3',
@@ -65,8 +92,17 @@ export const albumStub = {
     updatedAt: new Date(),
     deletedAt: null,
     sharedLinks: [],
-    sharedUsers: [userStub.admin],
+    albumUsers: [
+      {
+        user: userStub.admin,
+        album: undefined as unknown as AlbumEntity,
+        role: AlbumUserRole.EDITOR,
+        userId: userStub.admin.id,
+        albumId: 'album-3',
+      },
+    ],
     isActivityEnabled: true,
+    order: AssetOrder.DESC,
   }),
   oneAsset: Object.freeze<AlbumEntity>({
     id: 'album-4',
@@ -81,8 +117,9 @@ export const albumStub = {
     updatedAt: new Date(),
     deletedAt: null,
     sharedLinks: [],
-    sharedUsers: [],
+    albumUsers: [],
     isActivityEnabled: true,
+    order: AssetOrder.DESC,
   }),
   twoAssets: Object.freeze<AlbumEntity>({
     id: 'album-4a',
@@ -97,71 +134,25 @@ export const albumStub = {
     updatedAt: new Date(),
     deletedAt: null,
     sharedLinks: [],
-    sharedUsers: [],
+    albumUsers: [],
     isActivityEnabled: true,
-  }),
-  emptyWithInvalidThumbnail: Object.freeze<AlbumEntity>({
-    id: 'album-5',
-    albumName: 'Empty album with invalid thumbnail',
-    description: '',
-    ownerId: authStub.admin.user.id,
-    owner: userStub.admin,
-    assets: [],
-    albumThumbnailAsset: assetStub.image,
-    albumThumbnailAssetId: assetStub.image.id,
-    createdAt: new Date(),
-    updatedAt: new Date(),
-    deletedAt: null,
-    sharedLinks: [],
-    sharedUsers: [],
-    isActivityEnabled: true,
+    order: AssetOrder.DESC,
   }),
   emptyWithValidThumbnail: Object.freeze<AlbumEntity>({
     id: 'album-5',
-    albumName: 'Empty album with invalid thumbnail',
+    albumName: 'Empty album with valid thumbnail',
     description: '',
     ownerId: authStub.admin.user.id,
     owner: userStub.admin,
     assets: [],
-    albumThumbnailAsset: null,
-    albumThumbnailAssetId: null,
-    createdAt: new Date(),
-    updatedAt: new Date(),
-    deletedAt: null,
-    sharedLinks: [],
-    sharedUsers: [],
-    isActivityEnabled: true,
-  }),
-  oneAssetInvalidThumbnail: Object.freeze<AlbumEntity>({
-    id: 'album-6',
-    albumName: 'Album with one asset and invalid thumbnail',
-    description: '',
-    ownerId: authStub.admin.user.id,
-    owner: userStub.admin,
-    assets: [assetStub.image],
-    albumThumbnailAsset: assetStub.livePhotoMotionAsset,
-    albumThumbnailAssetId: assetStub.livePhotoMotionAsset.id,
-    createdAt: new Date(),
-    updatedAt: new Date(),
-    deletedAt: null,
-    sharedLinks: [],
-    sharedUsers: [],
-    isActivityEnabled: true,
-  }),
-  oneAssetValidThumbnail: Object.freeze<AlbumEntity>({
-    id: 'album-6',
-    albumName: 'Album with one asset and invalid thumbnail',
-    description: '',
-    ownerId: authStub.admin.user.id,
-    owner: userStub.admin,
-    assets: [assetStub.image],
     albumThumbnailAsset: assetStub.image,
     albumThumbnailAssetId: assetStub.image.id,
     createdAt: new Date(),
     updatedAt: new Date(),
     deletedAt: null,
     sharedLinks: [],
-    sharedUsers: [],
+    albumUsers: [],
     isActivityEnabled: true,
+    order: AssetOrder.DESC,
   }),
 };

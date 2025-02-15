@@ -1,7 +1,7 @@
 //
 // AUTO-GENERATED FILE, DO NOT MODIFY!
 //
-// @dart=2.12
+// @dart=2.18
 
 // ignore_for_file: unused_element, unused_import
 // ignore_for_file: always_put_required_named_parameters_first
@@ -15,30 +15,36 @@ class SystemConfigServerDto {
   SystemConfigServerDto({
     required this.externalDomain,
     required this.loginPageMessage,
+    required this.publicUsers,
   });
 
   String externalDomain;
 
   String loginPageMessage;
 
+  bool publicUsers;
+
   @override
   bool operator ==(Object other) => identical(this, other) || other is SystemConfigServerDto &&
     other.externalDomain == externalDomain &&
-    other.loginPageMessage == loginPageMessage;
+    other.loginPageMessage == loginPageMessage &&
+    other.publicUsers == publicUsers;
 
   @override
   int get hashCode =>
     // ignore: unnecessary_parenthesis
     (externalDomain.hashCode) +
-    (loginPageMessage.hashCode);
+    (loginPageMessage.hashCode) +
+    (publicUsers.hashCode);
 
   @override
-  String toString() => 'SystemConfigServerDto[externalDomain=$externalDomain, loginPageMessage=$loginPageMessage]';
+  String toString() => 'SystemConfigServerDto[externalDomain=$externalDomain, loginPageMessage=$loginPageMessage, publicUsers=$publicUsers]';
 
   Map<String, dynamic> toJson() {
     final json = <String, dynamic>{};
       json[r'externalDomain'] = this.externalDomain;
       json[r'loginPageMessage'] = this.loginPageMessage;
+      json[r'publicUsers'] = this.publicUsers;
     return json;
   }
 
@@ -46,12 +52,14 @@ class SystemConfigServerDto {
   /// [value] if it's a [Map], null otherwise.
   // ignore: prefer_constructors_over_static_methods
   static SystemConfigServerDto? fromJson(dynamic value) {
+    upgradeDto(value, "SystemConfigServerDto");
     if (value is Map) {
       final json = value.cast<String, dynamic>();
 
       return SystemConfigServerDto(
         externalDomain: mapValueOfType<String>(json, r'externalDomain')!,
         loginPageMessage: mapValueOfType<String>(json, r'loginPageMessage')!,
+        publicUsers: mapValueOfType<bool>(json, r'publicUsers')!,
       );
     }
     return null;
@@ -101,6 +109,7 @@ class SystemConfigServerDto {
   static const requiredKeys = <String>{
     'externalDomain',
     'loginPageMessage',
+    'publicUsers',
   };
 }
 

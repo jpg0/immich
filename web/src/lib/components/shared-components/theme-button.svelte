@@ -1,17 +1,29 @@
 <script lang="ts">
   import { moonPath, moonViewBox, sunPath, sunViewBox } from '$lib/assets/svg-paths';
+  import CircleIconButton, { type Padding } from '$lib/components/elements/buttons/circle-icon-button.svelte';
   import { Theme } from '$lib/constants';
   import { colorTheme, handleToggleTheme } from '$lib/stores/preferences.store';
-  import IconButton from '../elements/buttons/icon-button.svelte';
-  import Icon from '../elements/icon.svelte';
+  import { t } from 'svelte-i18n';
+
+  let icon = $derived($colorTheme.value === Theme.LIGHT ? moonPath : sunPath);
+  let viewBox = $derived($colorTheme.value === Theme.LIGHT ? moonViewBox : sunViewBox);
+  let isDark = $derived($colorTheme.value === Theme.DARK);
+
+  interface Props {
+    padding?: Padding;
+  }
+
+  let { padding = '3' }: Props = $props();
 </script>
 
 {#if !$colorTheme.system}
-  <IconButton on:click={handleToggleTheme} title="Toggle theme">
-    {#if $colorTheme.value === Theme.LIGHT}
-      <Icon path={moonPath} viewBox={sunViewBox} class="h-6 w-6" />
-    {:else}
-      <Icon path={sunPath} viewBox={moonViewBox} class="h-6 w-6" />
-    {/if}
-  </IconButton>
+  <CircleIconButton
+    title={$t('toggle_theme')}
+    {icon}
+    {viewBox}
+    role="switch"
+    aria-checked={isDark ? 'true' : 'false'}
+    onclick={handleToggleTheme}
+    {padding}
+  />
 {/if}

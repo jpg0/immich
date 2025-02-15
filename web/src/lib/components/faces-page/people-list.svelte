@@ -1,108 +1,56 @@
 <script lang="ts">
-  import { api, type PersonResponseDto } from '@api';
+  import { type PersonResponseDto } from '@immich/sdk';
   import FaceThumbnail from './face-thumbnail.svelte';
-  import { createEventDispatcher } from 'svelte';
-  import Icon from '../elements/icon.svelte';
-  import { mdiClose, mdiMagnify } from '@mdi/js';
-  import { handleError } from '$lib/utils/handle-error';
-  import LoadingSpinner from '../shared-components/loading-spinner.svelte';
-  import { searchNameLocal } from '$lib/utils/person';
+  import SearchPeople from '$lib/components/faces-page/people-search.svelte';
+  import { t } from 'svelte-i18n';
+  import CircleIconButton from '$lib/components/elements/buttons/circle-icon-button.svelte';
+  import { mdiSwapVertical } from '@mdi/js';
 
-  export let screenHeight: number;
-  export let people: PersonResponseDto[];
-  export let peopleCopy: PersonResponseDto[];
-  export let unselectedPeople: PersonResponseDto[];
-
-  let name = '';
-  let searchWord: string;
-  let isSearchingPeople = false;
-
-  let dispatch = createEventDispatcher<{
-    select: PersonResponseDto;
-  }>();
-
-  const resetSearch = () => {
-    name = '';
-    people = peopleCopy;
-  };
-
-  $: {
-    people = peopleCopy.filter(
-      (person) => !unselectedPeople.some((unselectedPerson) => unselectedPerson.id === person.id),
-    );
-    if (name) {
-      people = searchNameLocal(name, people, 10);
-    }
+  interface Props {
+    screenHeight: number;
+    people: PersonResponseDto[];
+    peopleToNotShow: PersonResponseDto[];
+    onSelect: (person: PersonResponseDto) => void;
+    handleSearch?: (sortFaces: boolean) => void;
   }
 
-  const searchPeople = async (force: boolean) => {
-    if (name === '') {
-      people = peopleCopy;
-      return;
-    }
-    if (!force) {
-      if (people.length < 20 && name.startsWith(searchWord)) {
-        return;
-      }
-    }
+  let { screenHeight, people, peopleToNotShow, onSelect, handleSearch }: Props = $props();
+  let searchedPeopleLocal: PersonResponseDto[] = $state([]);
+  let sortBySimilarirty = $state(false);
+  let name = $state('');
 
-    const timeout = setTimeout(() => (isSearchingPeople = true), 100);
-    try {
-      const { data } = await api.searchApi.searchPerson({ name });
-      people = data;
-      searchWord = name;
-    } catch (error) {
-      handleError(error, "Can't search people");
-    } finally {
-      clearTimeout(timeout);
-    }
-
-    isSearchingPeople = false;
-  };
+  const showPeople = $derived(
+    (name ? searchedPeopleLocal : people).filter(
+      (person) => !peopleToNotShow.some((unselectedPerson) => unselectedPerson.id === person.id),
+    ),
+  );
 </script>
 
-<div class="flex w-40 sm:w-48 md:w-96 h-14 rounded-lg bg-gray-100 p-2 dark:bg-gray-700 mb-8 gap-2 place-items-center">
-  <button on:click={() => searchPeople(true)}>
-    <div class="w-fit">
-      <Icon path={mdiMagnify} size="24" />
-    </div>
-  </button>
-  <!-- svelte-ignore a11y-autofocus -->
-  <input
-    autofocus
-    class="w-full gap-2 bg-gray-100 dark:bg-gray-700 dark:text-white"
-    type="text"
-    placeholder="Search names"
-    bind:value={name}
-    on:input={() => searchPeople(false)}
-  />
-  {#if name}
-    <button on:click={resetSearch}>
-      <Icon path={mdiClose} />
-    </button>
-  {/if}
-  {#if isSearchingPeople}
-    <div class="flex place-items-center">
-      <LoadingSpinner />
-    </div>
+<div class="w-40 sm:w-48 md:w-full h-14 flex gap-4 place-items-center">
+  <div class="md:w-96">
+    <SearchPeople type="searchBar" placeholder={$t('search_people')} bind:searchName={name} bind:searchedPeopleLocal />
+  </div>
+
+  {#if handleSearch}
+    <CircleIconButton
+      icon={mdiSwapVertical}
+      onclick={() => {
+        sortBySimilarirty = !sortBySimilarirty;
+        handleSearch(sortBySimilarirty);
+      }}
+      color="neutral"
+      title={$t('sort_people_by_similarity')}
+    ></CircleIconButton>
   {/if}
 </div>
 
 <div
-  class="immich-scrollbar overflow-y-auto rounded-3xl bg-gray-200 p-10 dark:bg-immich-dark-gray"
+  class="immich-scrollbar overflow-y-auto rounded-3xl bg-gray-200 p-10 dark:bg-immich-dark-gray mt-6"
   style:max-height={screenHeight - 400 + 'px'}
 >
   <div class="grid-col-2 grid gap-8 md:grid-cols-3 lg:grid-cols-6 xl:grid-cols-8 2xl:grid-cols-10">
-    {#each people as person (person.id)}
-      <FaceThumbnail
-        {person}
-        on:click={() => {
-          dispatch('select', person);
-        }}
-        circle
-        border
-        selectable
-      />
+    {#each showPeople as person (person.id)}
+      <FaceThumbnail {person} onClick={() => onSelect(person)} circle border selectable />
     {/each}
   </div>
 </div>

@@ -1,19 +1,24 @@
-import { BaseCommand } from '../cli/base-command';
+import { getAssetStatistics, getMyUser, getServerVersion, getSupportedMediaTypes } from '@immich/sdk';
+import { BaseOptions, authenticate } from 'src/utils';
 
-export class ServerInfo extends BaseCommand {
-  public async run() {
-    await this.connect();
-    const { data: versionInfo } = await this.immichApi.serverInfoApi.getServerVersion();
+export const serverInfo = async (options: BaseOptions) => {
+  const { url } = await authenticate(options);
 
-    console.log(`Server is running version ${versionInfo.major}.${versionInfo.minor}.${versionInfo.patch}`);
+  const [versionInfo, mediaTypes, stats, userInfo] = await Promise.all([
+    getServerVersion(),
+    getSupportedMediaTypes(),
+    getAssetStatistics({}),
+    getMyUser(),
+  ]);
 
-    const { data: supportedmedia } = await this.immichApi.serverInfoApi.getSupportedMediaTypes();
-
-    console.log(`Supported image types: ${supportedmedia.image.map((extension) => extension.replace('.', ''))}`);
-
-    console.log(`Supported video types: ${supportedmedia.video.map((extension) => extension.replace('.', ''))}`);
-
-    const { data: statistics } = await this.immichApi.assetApi.getAssetStatistics();
-    console.log(`Images: ${statistics.images}, Videos: ${statistics.videos}, Total: ${statistics.total}`);
-  }
-}
+  console.log(`Server Info (via ${userInfo.email})`);
+  console.log(`  Url: ${url}`);
+  console.log(`  Version: ${versionInfo.major}.${versionInfo.minor}.${versionInfo.patch}`);
+  console.log(`  Formats:`);
+  console.log(`    Images: ${mediaTypes.image.map((extension) => extension.replace('.', ''))}`);
+  console.log(`    Videos: ${mediaTypes.video.map((extension) => extension.replace('.', ''))}`);
+  console.log(`  Statistics:`);
+  console.log(`    Images: ${stats.images}`);
+  console.log(`    Videos: ${stats.videos}`);
+  console.log(`    Total: ${stats.total}`);
+};

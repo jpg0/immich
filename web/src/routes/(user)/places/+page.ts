@@ -1,15 +1,17 @@
 import { authenticate } from '$lib/utils/auth';
-import { api } from '@api';
+import { getFormatter } from '$lib/utils/i18n';
+import { getAssetsByCity } from '@immich/sdk';
 import type { PageLoad } from './$types';
 
 export const load = (async () => {
   await authenticate();
-  const { data: items } = await api.searchApi.getExploreData();
+  const items = await getAssetsByCity();
+  const $t = await getFormatter();
 
   return {
     items,
     meta: {
-      title: 'Places',
+      title: $t('places'),
     },
   };
 }) satisfies PageLoad;

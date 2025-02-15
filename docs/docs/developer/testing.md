@@ -4,24 +4,34 @@
 
 ### Unit tests
 
-Unit are run by calling `npm run test` from the `server` directory.
+Unit are run by calling `npm run test` from the `server/` directory.
+You need to run `npm install` (in `server/`) before _once_.
 
 ### End to end tests
 
-The backend has two end-to-end test suites that can be called with the following two commands from the project root directory:
+The e2e tests can be run by first starting up a test production environment via:
 
-- `make server-e2e-api`
-- `make server-e2e-jobs`
+```bash
+make e2e
+```
 
-#### API (e2e)
+Before you can run the tests, you need to run the following commands _once_:
 
-The API e2e tests spin up a test database and execute http requests against the server, validating the expected response codes and functionality for API endpoints.
+- `npm install` (in `e2e/`)
+- `make open-api` (in the project root `/`)
 
-#### Jobs (e2e)
+Once the test environment is running, the e2e tests can be run via:
 
-The Jobs e2e tests spin up a docker test environment where thumbnail generation, library scanning, and other _job_ workflows are validated.
+```bash
+cd e2e/
+npm test
+```
 
-:::note
-Note that there is a bug in nodejs \<20.8 that causes segmentation faults when running these tests. If you run into segfaults, ensure you are using at least version 20.8.
-:::
-/follow
+The tests check various things including:
+
+- Authentication and authorization
+- Query param, body, and url validation
+- Response codes
+- Thumbnail generation
+- Metadata extraction
+- Library scanning

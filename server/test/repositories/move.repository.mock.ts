@@ -1,10 +1,12 @@
-import { IMoveRepository } from '@app/domain';
+import { MoveRepository } from 'src/repositories/move.repository';
+import { RepositoryInterface } from 'src/types';
+import { Mocked, vitest } from 'vitest';
 
-export const newMoveRepositoryMock = (): jest.Mocked<IMoveRepository> => {
+export const newMoveRepositoryMock = (): Mocked<RepositoryInterface<MoveRepository>> => {
   return {
-    create: jest.fn(),
-    getByEntity: jest.fn(),
-    update: jest.fn(),
-    delete: jest.fn(),
+    create: vitest.fn(),
+    getByEntity: vitest.fn(),
+    update: vitest.fn(),
+    delete: vitest.fn(),
   };
 };

@@ -1,11 +1,7 @@
-import { authenticate } from '$lib/utils/auth';
+import { AppRoute } from '$lib/constants';
+import { redirect } from '@sveltejs/kit';
 import type { PageLoad } from './$types';
 
-export const load = (async () => {
-  await authenticate();
-  return {
-    meta: {
-      title: 'Shared Links',
-    },
-  };
+export const load = (() => {
+  redirect(307, AppRoute.SHARED_LINKS);
 }) satisfies PageLoad;

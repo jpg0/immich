@@ -1,20 +1,22 @@
-import { IJobRepository } from '@app/domain';
+import { JobRepository } from 'src/repositories/job.repository';
+import { RepositoryInterface } from 'src/types';
+import { Mocked, vitest } from 'vitest';
 
-export const newJobRepositoryMock = (): jest.Mocked<IJobRepository> => {
+export const newJobRepositoryMock = (): Mocked<RepositoryInterface<JobRepository>> => {
   return {
-    addHandler: jest.fn(),
-    addCronJob: jest.fn(),
-    deleteCronJob: jest.fn(),
-    updateCronJob: jest.fn(),
-    setConcurrency: jest.fn(),
-    empty: jest.fn(),
-    pause: jest.fn(),
-    resume: jest.fn(),
-    queue: jest.fn().mockImplementation(() => Promise.resolve()),
-    queueAll: jest.fn().mockImplementation(() => Promise.resolve()),
-    getQueueStatus: jest.fn(),
-    getJobCounts: jest.fn(),
-    clear: jest.fn(),
-    waitForQueueCompletion: jest.fn(),
+    setup: vitest.fn(),
+    startWorkers: vitest.fn(),
+    run: vitest.fn(),
+    setConcurrency: vitest.fn(),
+    empty: vitest.fn(),
+    pause: vitest.fn(),
+    resume: vitest.fn(),
+    queue: vitest.fn().mockImplementation(() => Promise.resolve()),
+    queueAll: vitest.fn().mockImplementation(() => Promise.resolve()),
+    getQueueStatus: vitest.fn(),
+    getJobCounts: vitest.fn(),
+    clear: vitest.fn(),
+    waitForQueueCompletion: vitest.fn(),
+    removeJob: vitest.fn(),
   };
 };
