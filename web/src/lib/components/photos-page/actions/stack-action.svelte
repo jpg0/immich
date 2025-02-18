@@ -1,58 +1,49 @@
 <script lang="ts">
   import MenuOption from '$lib/components/shared-components/context-menu/menu-option.svelte';
-  import { api } from '@api';
-  import { getAssetControlContext } from '../asset-select-control-bar.svelte';
-  import {
-    NotificationType,
-    notificationController,
-  } from '$lib/components/shared-components/notification/notification';
-  import { handleError } from '$lib/utils/handle-error';
-  import type { OnStack } from '$lib/utils/actions';
+  import { getAssetControlContext } from '$lib/components/photos-page/asset-select-control-bar.svelte';
+  import { mdiImageMinusOutline, mdiImageMultipleOutline } from '@mdi/js';
+  import { stackAssets, deleteStack } from '$lib/utils/asset-utils';
+  import type { OnStack, OnUnstack } from '$lib/utils/actions';
+  import { t } from 'svelte-i18n';
 
-  export let onStack: OnStack | undefined = undefined;
+  interface Props {
+    unstack?: boolean;
+    onStack: OnStack | undefined;
+    onUnstack: OnUnstack | undefined;
+  }
+
+  let { unstack = false, onStack, onUnstack }: Props = $props();
 
   const { clearSelect, getOwnedAssets } = getAssetControlContext();
 
   const handleStack = async () => {
-    try {
-      const assets = Array.from(getOwnedAssets());
-      const parent = assets.at(0);
-
-      if (parent == undefined) {
-        return;
-      }
-
-      const children = assets.slice(1);
-      const ids = children.map(({ id }) => id);
-
-      if (children.length > 0) {
-        await api.assetApi.updateAssets({ assetBulkUpdateDto: { ids, stackParentId: parent.id } });
-      }
-
-      let childrenCount = parent.stackCount ?? 0;
-      for (const asset of children) {
-        asset.stackParentId = parent?.id;
-        // Add grand-children's count to new parent
-        childrenCount += asset.stackCount == null ? 1 : asset.stackCount + 1;
-        // Reset children stack info
-        asset.stackCount = null;
-        asset.stack = [];
-      }
-
-      parent.stackCount = childrenCount;
+    const selectedAssets = [...getOwnedAssets()];
+    const ids = await stackAssets(selectedAssets);
+    if (ids) {
       onStack?.(ids);
-
-      notificationController.show({
-        message: `Stacked ${ids.length + 1} assets`,
-        type: NotificationType.Info,
-        timeout: 1500,
-      });
-
       clearSelect();
-    } catch (error) {
-      handleError(error, `Unable to stack`);
     }
+  };
+
+  const handleUnstack = async () => {
+    const selectedAssets = [...getOwnedAssets()];
+    if (selectedAssets.length !== 1) {
+      return;
+    }
+    const { stack } = selectedAssets[0];
+    if (!stack) {
+      return;
+    }
+    const unstackedAssets = await deleteStack([stack.id]);
+    if (unstackedAssets) {
+      onUnstack?.(unstackedAssets);
+    }
+    clearSelect();
   };
 </script>
 
-<MenuOption text="Stack" on:click={handleStack} />
+{#if unstack}
+  <MenuOption text={$t('unstack')} icon={mdiImageMinusOutline} onClick={handleUnstack} />
+{:else}
+  <MenuOption text={$t('stack')} icon={mdiImageMultipleOutline} onClick={handleStack} />
+{/if}

@@ -1,42 +1,29 @@
 <script lang="ts">
   import CircleIconButton from '$lib/components/elements/buttons/circle-icon-button.svelte';
-  import type { AssetInteractionStore } from '$lib/stores/asset-interaction.store';
-  import { BucketPosition, type AssetStore, isSelectAllCancelled } from '$lib/stores/assets.store';
-  import { handleError } from '$lib/utils/handle-error';
-  import { get } from 'svelte/store';
-  import { mdiTimerSand, mdiSelectAll } from '@mdi/js';
+  import { type AssetStore, isSelectingAllAssets } from '$lib/stores/assets.store';
+  import { mdiSelectAll, mdiSelectRemove } from '@mdi/js';
+  import { selectAllAssets, cancelMultiselect } from '$lib/utils/asset-utils';
+  import { t } from 'svelte-i18n';
+  import type { AssetInteraction } from '$lib/stores/asset-interaction.svelte';
 
-  export let assetStore: AssetStore;
-  export let assetInteractionStore: AssetInteractionStore;
+  interface Props {
+    assetStore: AssetStore;
+    assetInteraction: AssetInteraction;
+  }
 
-  let selecting = false;
+  let { assetStore, assetInteraction }: Props = $props();
 
   const handleSelectAll = async () => {
-    try {
-      $isSelectAllCancelled = false;
-      selecting = true;
+    await selectAllAssets(assetStore, assetInteraction);
+  };
 
-      const assetGridState = get(assetStore);
-      for (const bucket of assetGridState.buckets) {
-        if ($isSelectAllCancelled) {
-          break;
-        }
-        await assetStore.loadBucket(bucket.bucketDate, BucketPosition.Unknown);
-        for (const asset of bucket.assets) {
-          assetInteractionStore.selectAsset(asset);
-        }
-      }
-
-      selecting = false;
-    } catch (e) {
-      handleError(e, 'Error selecting all assets');
-    }
+  const handleCancel = () => {
+    cancelMultiselect(assetInteraction);
   };
 </script>
 
-{#if selecting}
-  <CircleIconButton title="Delete" icon={mdiTimerSand} />
-{/if}
-{#if !selecting}
-  <CircleIconButton title="Select all" icon={mdiSelectAll} on:click={handleSelectAll} />
+{#if $isSelectingAllAssets}
+  <CircleIconButton title={$t('unselect_all')} icon={mdiSelectRemove} onclick={handleCancel} />
+{:else}
+  <CircleIconButton title={$t('select_all')} icon={mdiSelectAll} onclick={handleSelectAll} />
 {/if}

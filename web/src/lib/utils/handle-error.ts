@@ -1,35 +1,44 @@
-import type { ApiError } from '@api';
-import axios from 'axios';
+import { isHttpError } from '@immich/sdk';
 import { notificationController, NotificationType } from '../components/shared-components/notification/notification';
 
-export async function getServerErrorMessage(error: unknown) {
-  let data = (error as ApiError)?.response?.data;
-  if (data instanceof Blob) {
-    const response = await data.text();
-    try {
-      data = JSON.parse(response);
-    } catch {
-      data = { message: response };
-    }
-  }
-
-  return data?.message || null;
-}
-
-export async function handleError(error: unknown, message: string) {
-  if (axios.isCancel(error)) {
+export function getServerErrorMessage(error: unknown) {
+  if (!isHttpError(error)) {
     return;
   }
 
-  console.error(`[handleError]: ${message}`, error);
-
-  let serverMessage = await getServerErrorMessage(error);
-  if (serverMessage) {
-    serverMessage = `${String(serverMessage).slice(0, 75)}\n(Immich Server Error)`;
+  // errors for endpoints without return types aren't parsed as json
+  let data = error.data;
+  if (typeof data === 'string') {
+    try {
+      data = JSON.parse(data);
+    } catch {
+      // Not a JSON string
+    }
   }
 
-  notificationController.show({
-    message: serverMessage || message,
-    type: NotificationType.Error,
-  });
+  return data?.message || error.message;
+}
+
+export function handleError(error: unknown, message: string) {
+  if ((error as Error)?.name === 'AbortError') {
+    return;
+  }
+
+  console.error(`[handleError]: ${message}`, error, (error as Error)?.stack);
+
+  try {
+    let serverMessage = getServerErrorMessage(error);
+    if (serverMessage) {
+      serverMessage = `${String(serverMessage).slice(0, 75)}\n(Immich Server Error)`;
+    }
+
+    const errorMessage = serverMessage || message;
+
+    notificationController.show({ message: errorMessage, type: NotificationType.Error });
+
+    return errorMessage;
+  } catch (error) {
+    console.error(error);
+    return message;
+  }
 }

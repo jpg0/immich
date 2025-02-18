@@ -1,60 +1,74 @@
 <script lang="ts">
-  import { type PersonResponseDto, api } from '@api';
-  import { getContextMenuPosition } from '$lib/utils/context-menu';
-  import ImageThumbnail from '../assets/thumbnail/image-thumbnail.svelte';
-  import IconButton from '../elements/buttons/icon-button.svelte';
-  import ContextMenu from '../shared-components/context-menu/context-menu.svelte';
-  import MenuOption from '../shared-components/context-menu/menu-option.svelte';
-  import Portal from '../shared-components/portal/portal.svelte';
-  import { createEventDispatcher } from 'svelte';
-  import { AppRoute } from '$lib/constants';
-  import { mdiDotsVertical } from '@mdi/js';
+  import { focusOutside } from '$lib/actions/focus-outside';
   import Icon from '$lib/components/elements/icon.svelte';
+  import ButtonContextMenu from '$lib/components/shared-components/context-menu/button-context-menu.svelte';
+  import { AppRoute, QueryParameter } from '$lib/constants';
+  import { getPeopleThumbnailUrl } from '$lib/utils';
+  import { type PersonResponseDto } from '@immich/sdk';
+  import {
+    mdiAccountEditOutline,
+    mdiAccountMultipleCheckOutline,
+    mdiCalendarEditOutline,
+    mdiDotsVertical,
+    mdiEyeOffOutline,
+    mdiHeart,
+    mdiHeartMinusOutline,
+    mdiHeartOutline,
+  } from '@mdi/js';
+  import { t } from 'svelte-i18n';
+  import ImageThumbnail from '../assets/thumbnail/image-thumbnail.svelte';
+  import MenuOption from '../shared-components/context-menu/menu-option.svelte';
 
-  export let person: PersonResponseDto;
-  export let preload = false;
+  interface Props {
+    person: PersonResponseDto;
+    preload?: boolean;
+    onChangeName: () => void;
+    onSetBirthDate: () => void;
+    onMergePeople: () => void;
+    onHidePerson: () => void;
+    onToggleFavorite: () => void;
+  }
 
-  type MenuItemEvent = 'change-name' | 'set-birth-date' | 'merge-people' | 'hide-person';
-  let dispatch = createEventDispatcher<{
-    'change-name': void;
-    'set-birth-date': void;
-    'merge-people': void;
-    'hide-person': void;
-  }>();
+  let {
+    person,
+    preload = false,
+    onChangeName,
+    onSetBirthDate,
+    onMergePeople,
+    onHidePerson,
+    onToggleFavorite,
+  }: Props = $props();
 
-  let showVerticalDots = false;
-  let showContextMenu = false;
-  let contextMenuPosition = { x: 0, y: 0 };
-  const showMenu = (event: MouseEvent) => {
-    contextMenuPosition = getContextMenuPosition(event);
-    showContextMenu = !showContextMenu;
-  };
-  const onMenuExit = () => {
-    showContextMenu = false;
-  };
-  const onMenuClick = (event: MenuItemEvent) => {
-    onMenuExit();
-    dispatch(event);
-  };
+  let showVerticalDots = $state(false);
 </script>
 
 <div
   id="people-card"
   class="relative"
-  on:mouseenter={() => (showVerticalDots = true)}
-  on:mouseleave={() => (showVerticalDots = false)}
+  onmouseenter={() => (showVerticalDots = true)}
+  onmouseleave={() => (showVerticalDots = false)}
   role="group"
+  use:focusOutside={{ onFocusOut: () => (showVerticalDots = false) }}
 >
-  <a href="{AppRoute.PEOPLE}/{person.id}?previousRoute={AppRoute.PEOPLE}" draggable="false">
+  <a
+    href="{AppRoute.PEOPLE}/{person.id}?{QueryParameter.PREVIOUS_ROUTE}={AppRoute.PEOPLE}"
+    draggable="false"
+    onfocus={() => (showVerticalDots = true)}
+  >
     <div class="w-full h-full rounded-xl brightness-95 filter">
       <ImageThumbnail
         shadow
         {preload}
-        url={api.getPeopleThumbnailUrl(person.id)}
+        url={getPeopleThumbnailUrl(person)}
         altText={person.name}
         title={person.name}
         widthStyle="100%"
       />
+      {#if person.isFavorite}
+        <div class="absolute bottom-2 left-2 z-10">
+          <Icon path={mdiHeart} size="24" class="text-white" />
+        </div>
+      {/if}
     </div>
     {#if person.name}
       <span
@@ -66,26 +80,26 @@
     {/if}
   </a>
 
-  <button
-    class="absolute right-2 top-2"
-    on:click|stopPropagation|preventDefault={showMenu}
-    class:hidden={!showVerticalDots}
-    data-testid="context-button-parent"
-    id={`icon-${person.id}`}
-  >
-    <IconButton color="transparent-primary">
-      <Icon path={mdiDotsVertical} size="20" class="icon-white-drop-shadow text-white" />
-    </IconButton>
-  </button>
+  {#if showVerticalDots}
+    <div class="absolute top-2 right-2">
+      <ButtonContextMenu
+        buttonClass="icon-white-drop-shadow focus:opacity-100 {showVerticalDots ? 'opacity-100' : 'opacity-0'}"
+        color="opaque"
+        padding="2"
+        size="20"
+        icon={mdiDotsVertical}
+        title={$t('show_person_options')}
+      >
+        <MenuOption onClick={onHidePerson} icon={mdiEyeOffOutline} text={$t('hide_person')} />
+        <MenuOption onClick={onChangeName} icon={mdiAccountEditOutline} text={$t('change_name')} />
+        <MenuOption onClick={onSetBirthDate} icon={mdiCalendarEditOutline} text={$t('set_date_of_birth')} />
+        <MenuOption onClick={onMergePeople} icon={mdiAccountMultipleCheckOutline} text={$t('merge_people')} />
+        <MenuOption
+          onClick={onToggleFavorite}
+          icon={person.isFavorite ? mdiHeartMinusOutline : mdiHeartOutline}
+          text={person.isFavorite ? $t('unfavorite') : $t('to_favorite')}
+        />
+      </ButtonContextMenu>
+    </div>
+  {/if}
 </div>
-
-{#if showContextMenu}
-  <Portal target="body">
-    <ContextMenu {...contextMenuPosition} on:outclick={() => onMenuExit()}>
-      <MenuOption on:click={() => onMenuClick('hide-person')} text="Hide Person" />
-      <MenuOption on:click={() => onMenuClick('change-name')} text="Change name" />
-      <MenuOption on:click={() => onMenuClick('set-birth-date')} text="Set date of birth" />
-      <MenuOption on:click={() => onMenuClick('merge-people')} text="Merge People" />
-    </ContextMenu>
-  </Portal>
-{/if}

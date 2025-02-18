@@ -1,4 +1,6 @@
-import type { PersonResponseDto } from '@api';
+import type { PersonResponseDto } from '@immich/sdk';
+import { t } from 'svelte-i18n';
+import { derived } from 'svelte/store';
 
 export const searchNameLocal = (
   name: string,
@@ -6,31 +8,25 @@ export const searchNameLocal = (
   slice: number,
   personId?: string,
 ): PersonResponseDto[] => {
-  return name.indexOf(' ') >= 0
+  return name.includes(' ')
     ? people
         .filter((person: PersonResponseDto) => {
-          if (personId) {
-            return person.name.toLowerCase().startsWith(name.toLowerCase()) && person.id !== personId;
-          } else {
-            return person.name.toLowerCase().startsWith(name.toLowerCase());
-          }
+          return personId
+            ? person.name.toLowerCase().startsWith(name.toLowerCase()) && person.id !== personId
+            : person.name.toLowerCase().startsWith(name.toLowerCase());
         })
         .slice(0, slice)
     : people
         .filter((person: PersonResponseDto) => {
           const nameParts = person.name.split(' ');
-          if (personId) {
-            return (
-              nameParts.some((splitName) => splitName.toLowerCase().startsWith(name.toLowerCase())) &&
-              person.id !== personId
-            );
-          } else {
-            return nameParts.some((splitName) => splitName.toLowerCase().startsWith(name.toLowerCase()));
-          }
+          return personId
+            ? nameParts.some((splitName) => splitName.toLowerCase().startsWith(name.toLowerCase())) &&
+                person.id !== personId
+            : nameParts.some((splitName) => splitName.toLowerCase().startsWith(name.toLowerCase()));
         })
         .slice(0, slice);
 };
 
-export const getPersonNameWithHiddenValue = (name: string, isHidden: boolean) => {
-  return `${name ? name + (isHidden ? ' ' : '') : ''}${isHidden ? '(hidden)' : ''}`;
-};
+export const getPersonNameWithHiddenValue = derived(t, ($t) => {
+  return (name: string, isHidden: boolean) => $t('person_hidden', { values: { name, hidden: isHidden } });
+});

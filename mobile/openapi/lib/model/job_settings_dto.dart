@@ -1,7 +1,7 @@
 //
 // AUTO-GENERATED FILE, DO NOT MODIFY!
 //
-// @dart=2.12
+// @dart=2.18
 
 // ignore_for_file: unused_element, unused_import
 // ignore_for_file: always_put_required_named_parameters_first
@@ -16,6 +16,7 @@ class JobSettingsDto {
     required this.concurrency,
   });
 
+  /// Minimum value: 1
   int concurrency;
 
   @override
@@ -40,6 +41,7 @@ class JobSettingsDto {
   /// [value] if it's a [Map], null otherwise.
   // ignore: prefer_constructors_over_static_methods
   static JobSettingsDto? fromJson(dynamic value) {
+    upgradeDto(value, "JobSettingsDto");
     if (value is Map) {
       final json = value.cast<String, dynamic>();
 

@@ -1,7 +1,7 @@
 //
 // AUTO-GENERATED FILE, DO NOT MODIFY!
 //
-// @dart=2.12
+// @dart=2.18
 
 // ignore_for_file: unused_element, unused_import
 // ignore_for_file: always_put_required_named_parameters_first
@@ -16,6 +16,7 @@ class SearchAssetResponseDto {
     required this.count,
     this.facets = const [],
     this.items = const [],
+    required this.nextPage,
     required this.total,
   });
 
@@ -25,6 +26,8 @@ class SearchAssetResponseDto {
 
   List<AssetResponseDto> items;
 
+  String? nextPage;
+
   int total;
 
   @override
@@ -32,6 +35,7 @@ class SearchAssetResponseDto {
     other.count == count &&
     _deepEquality.equals(other.facets, facets) &&
     _deepEquality.equals(other.items, items) &&
+    other.nextPage == nextPage &&
     other.total == total;
 
   @override
@@ -40,16 +44,22 @@ class SearchAssetResponseDto {
     (count.hashCode) +
     (facets.hashCode) +
     (items.hashCode) +
+    (nextPage == null ? 0 : nextPage!.hashCode) +
     (total.hashCode);
 
   @override
-  String toString() => 'SearchAssetResponseDto[count=$count, facets=$facets, items=$items, total=$total]';
+  String toString() => 'SearchAssetResponseDto[count=$count, facets=$facets, items=$items, nextPage=$nextPage, total=$total]';
 
   Map<String, dynamic> toJson() {
     final json = <String, dynamic>{};
       json[r'count'] = this.count;
       json[r'facets'] = this.facets;
       json[r'items'] = this.items;
+    if (this.nextPage != null) {
+      json[r'nextPage'] = this.nextPage;
+    } else {
+    //  json[r'nextPage'] = null;
+    }
       json[r'total'] = this.total;
     return json;
   }
@@ -58,6 +68,7 @@ class SearchAssetResponseDto {
   /// [value] if it's a [Map], null otherwise.
   // ignore: prefer_constructors_over_static_methods
   static SearchAssetResponseDto? fromJson(dynamic value) {
+    upgradeDto(value, "SearchAssetResponseDto");
     if (value is Map) {
       final json = value.cast<String, dynamic>();
 
@@ -65,6 +76,7 @@ class SearchAssetResponseDto {
         count: mapValueOfType<int>(json, r'count')!,
         facets: SearchFacetResponseDto.listFromJson(json[r'facets']),
         items: AssetResponseDto.listFromJson(json[r'items']),
+        nextPage: mapValueOfType<String>(json, r'nextPage'),
         total: mapValueOfType<int>(json, r'total')!,
       );
     }
@@ -116,6 +128,7 @@ class SearchAssetResponseDto {
     'count',
     'facets',
     'items',
+    'nextPage',
     'total',
   };
 }

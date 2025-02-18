@@ -1,132 +1,74 @@
 <script lang="ts">
-  import { api, AssetTypeEnum, type AssetFaceResponseDto, type PersonResponseDto, ThumbnailFormat } from '@api';
-  import { createEventDispatcher } from 'svelte';
+  import { timeBeforeShowLoadingSpinner } from '$lib/constants';
+  import { getPersonNameWithHiddenValue } from '$lib/utils/person';
+  import { getPeopleThumbnailUrl, handlePromiseError } from '$lib/utils';
+  import { AssetTypeEnum, type AssetFaceResponseDto, type PersonResponseDto, getAllPeople } from '@immich/sdk';
+  import { mdiArrowLeftThin, mdiClose, mdiMagnify, mdiPlus } from '@mdi/js';
   import { linear } from 'svelte/easing';
   import { fly } from 'svelte/transition';
-  import Icon from '../elements/icon.svelte';
-  import { mdiArrowLeftThin, mdiClose, mdiMagnify, mdiPlus } from '@mdi/js';
-  import LoadingSpinner from '../shared-components/loading-spinner.svelte';
-  import ImageThumbnail from '../assets/thumbnail/image-thumbnail.svelte';
-  import { getPersonNameWithHiddenValue, searchNameLocal } from '$lib/utils/person';
-  import { handleError } from '$lib/utils/handle-error';
   import { photoViewer } from '$lib/stores/assets.store';
+  import ImageThumbnail from '../assets/thumbnail/image-thumbnail.svelte';
+  import LoadingSpinner from '../shared-components/loading-spinner.svelte';
+  import SearchPeople from '$lib/components/faces-page/people-search.svelte';
+  import CircleIconButton from '$lib/components/elements/buttons/circle-icon-button.svelte';
+  import { zoomImageToBase64 } from '$lib/utils/people-utils';
+  import { t } from 'svelte-i18n';
+  import { handleError } from '$lib/utils/handle-error';
+  import { onMount } from 'svelte';
 
-  export let peopleWithFaces: AssetFaceResponseDto[];
-  export let allPeople: PersonResponseDto[];
-  export let editedPersonIndex: number;
-  export let assetType: AssetTypeEnum;
-  export let assetId: string;
+  interface Props {
+    editedFace: AssetFaceResponseDto;
+    assetId: string;
+    assetType: AssetTypeEnum;
+    onClose: () => void;
+    onCreatePerson: (featurePhoto: string | null) => void;
+    onReassign: (person: PersonResponseDto) => void;
+  }
 
-  // loading spinners
-  let isShowLoadingNewPerson = false;
-  let isShowLoadingSearch = false;
+  let { editedFace, assetId, assetType, onClose, onCreatePerson, onReassign }: Props = $props();
 
-  // search people
-  let searchedPeople: PersonResponseDto[] = [];
-  let searchedPeopleCopy: PersonResponseDto[] = [];
-  let searchWord: string;
-  let searchFaces = false;
-  let searchName = '';
+  let allPeople: PersonResponseDto[] = $state([]);
 
-  const dispatch = createEventDispatcher<{
-    close: void;
-    createPerson: string | null;
-    reassign: PersonResponseDto;
-  }>();
-  const handleBackButton = () => {
-    dispatch('close');
-  };
-  const zoomImageToBase64 = async (face: AssetFaceResponseDto): Promise<string | null> => {
-    let image: HTMLImageElement | null = null;
-    if (assetType === AssetTypeEnum.Image) {
-      image = $photoViewer;
-    } else if (assetType === AssetTypeEnum.Video) {
-      const data = await api.getAssetThumbnailUrl(assetId, ThumbnailFormat.Webp);
-      const img: HTMLImageElement = new Image();
-      img.src = data;
+  let isShowLoadingPeople = $state(false);
 
-      await new Promise<void>((resolve) => {
-        img.onload = () => resolve();
-        img.onerror = () => resolve();
-      });
-
-      image = img;
-    }
-    if (image === null) {
-      return null;
-    }
-    const { boundingBoxX1: x1, boundingBoxX2: x2, boundingBoxY1: y1, boundingBoxY2: y2 } = face;
-
-    const coordinates = {
-      x1: (image.naturalWidth / face.imageWidth) * x1,
-      x2: (image.naturalWidth / face.imageWidth) * x2,
-      y1: (image.naturalHeight / face.imageHeight) * y1,
-      y2: (image.naturalHeight / face.imageHeight) * y2,
-    };
-
-    const faceWidth = coordinates.x2 - coordinates.x1;
-    const faceHeight = coordinates.y2 - coordinates.y1;
-
-    const faceImage = new Image();
-    faceImage.src = image.src;
-
-    await new Promise((resolve) => {
-      faceImage.onload = resolve;
-      faceImage.onerror = () => resolve(null);
-    });
-
-    const canvas = document.createElement('canvas');
-    canvas.width = faceWidth;
-    canvas.height = faceHeight;
-
-    const ctx = canvas.getContext('2d');
-    if (ctx) {
-      ctx.drawImage(faceImage, coordinates.x1, coordinates.y1, faceWidth, faceHeight, 0, 0, faceWidth, faceHeight);
-
-      return canvas.toDataURL();
-    } else {
-      return null;
-    }
-  };
-
-  const handleCreatePerson = async () => {
-    const timeout = setTimeout(() => (isShowLoadingNewPerson = true), 100);
-    const personToUpdate = peopleWithFaces.find((person) => person.id === peopleWithFaces[editedPersonIndex].id);
-
-    const newFeaturePhoto = personToUpdate ? await zoomImageToBase64(personToUpdate) : null;
-
-    dispatch('createPerson', newFeaturePhoto);
-
-    clearTimeout(timeout);
-    isShowLoadingNewPerson = false;
-    dispatch('createPerson', newFeaturePhoto);
-  };
-
-  const searchPeople = async () => {
-    if ((searchedPeople.length < 20 && searchName.startsWith(searchWord)) || searchName === '') {
-      return;
-    }
-    const timeout = setTimeout(() => (isShowLoadingSearch = true), 100);
+  async function loadPeople() {
+    const timeout = setTimeout(() => (isShowLoadingPeople = true), timeBeforeShowLoadingSpinner);
     try {
-      const { data } = await api.searchApi.searchPerson({ name: searchName });
-      searchedPeople = data;
-      searchedPeopleCopy = data;
-      searchWord = searchName;
+      const { people } = await getAllPeople({ withHidden: true, closestAssetId: editedFace.id });
+      allPeople = people;
     } catch (error) {
-      handleError(error, "Can't search people");
+      handleError(error, $t('errors.cant_get_faces'));
     } finally {
       clearTimeout(timeout);
     }
-
-    isShowLoadingSearch = false;
-  };
-
-  $: {
-    searchedPeople = searchNameLocal(searchName, searchedPeopleCopy, 10);
+    isShowLoadingPeople = false;
   }
 
-  const initInput = (element: HTMLInputElement) => {
-    element.focus();
+  // loading spinners
+  let isShowLoadingNewPerson = $state(false);
+  let isShowLoadingSearch = $state(false);
+
+  // search people
+  let searchedPeople: PersonResponseDto[] = $state([]);
+  let searchFaces = $state(false);
+  let searchName = $state('');
+
+  let showPeople = $derived(searchName ? searchedPeople : allPeople.filter((person) => !person.isHidden));
+
+  onMount(() => {
+    handlePromiseError(loadPeople());
+  });
+
+  const handleCreatePerson = async () => {
+    const timeout = setTimeout(() => (isShowLoadingNewPerson = true), timeBeforeShowLoadingSpinner);
+
+    const newFeaturePhoto = await zoomImageToBase64(editedFace, assetId, assetType, $photoViewer);
+
+    onCreatePerson(newFeaturePhoto);
+
+    clearTimeout(timeout);
+    isShowLoadingNewPerson = false;
+    onCreatePerson(newFeaturePhoto);
   };
 </script>
 
@@ -137,38 +79,19 @@
   <div class="flex place-items-center justify-between gap-2">
     {#if !searchFaces}
       <div class="flex items-center gap-2">
-        <button
-          class="flex place-content-center rounded-full p-3 transition-colors hover:bg-gray-200 dark:text-immich-dark-fg dark:hover:bg-gray-900"
-          on:click={handleBackButton}
-        >
-          <div>
-            <Icon path={mdiArrowLeftThin} size="24" />
-          </div>
-        </button>
-        <p class="flex text-lg text-immich-fg dark:text-immich-dark-fg">Select face</p>
+        <CircleIconButton icon={mdiArrowLeftThin} title={$t('back')} onclick={onClose} />
+        <p class="flex text-lg text-immich-fg dark:text-immich-dark-fg">{$t('select_face')}</p>
       </div>
       <div class="flex justify-end gap-2">
-        <button
-          class="flex place-content-center place-items-center rounded-full p-3 transition-colors hover:bg-gray-200 dark:text-immich-dark-fg dark:hover:bg-gray-900"
-          title="Search existing person"
-          on:click={() => {
+        <CircleIconButton
+          icon={mdiMagnify}
+          title={$t('search_for_existing_person')}
+          onclick={() => {
             searchFaces = true;
           }}
-        >
-          <div>
-            <Icon path={mdiMagnify} size="24" />
-          </div>
-        </button>
+        />
         {#if !isShowLoadingNewPerson}
-          <button
-            class="flex place-content-center place-items-center rounded-full p-3 transition-colors hover:bg-gray-200 dark:text-immich-dark-fg dark:hover:bg-gray-900"
-            on:click={handleCreatePerson}
-            title="Create new person"
-          >
-            <div>
-              <Icon path={mdiPlus} size="24" />
-            </div>
-          </button>
+          <CircleIconButton icon={mdiPlus} title={$t('create_new_person')} onclick={handleCreatePerson} />
         {:else}
           <div class="flex place-content-center place-items-center">
             <LoadingSpinner />
@@ -176,22 +99,13 @@
         {/if}
       </div>
     {:else}
-      <button
-        class="flex place-content-center rounded-full p-3 transition-colors hover:bg-gray-200 dark:text-immich-dark-fg dark:hover:bg-gray-900"
-        on:click={handleBackButton}
-      >
-        <div>
-          <Icon path={mdiArrowLeftThin} size="24" />
-        </div>
-      </button>
+      <CircleIconButton icon={mdiArrowLeftThin} title={$t('back')} onclick={onClose} />
       <div class="w-full flex">
-        <input
-          class="w-full gap-2 bg-immich-bg dark:bg-immich-dark-bg"
-          type="text"
-          placeholder="Name or nickname"
-          bind:value={searchName}
-          on:input={searchPeople}
-          use:initInput
+        <SearchPeople
+          type="input"
+          bind:searchName
+          bind:showLoadingSpinner={isShowLoadingSearch}
+          bind:searchedPeopleLocal={searchedPeople}
         />
         {#if isShowLoadingSearch}
           <div>
@@ -199,69 +113,45 @@
           </div>
         {/if}
       </div>
-      <button
-        class="flex place-content-center place-items-center rounded-full p-3 transition-colors hover:bg-gray-200 dark:text-immich-dark-fg dark:hover:bg-gray-900"
-        on:click={() => (searchFaces = false)}
-      >
-        <div>
-          <Icon path={mdiClose} size="24" />
-        </div>
-      </button>
+      <CircleIconButton icon={mdiClose} title={$t('cancel_search')} onclick={() => (searchFaces = false)} />
     {/if}
   </div>
   <div class="px-4 py-4 text-sm">
-    <h2 class="mb-8 mt-4 uppercase">All people</h2>
-    <div class="immich-scrollbar mt-4 flex flex-wrap gap-2 overflow-y-auto">
-      {#if searchName == ''}
-        {#each allPeople as person (person.id)}
-          {#if person.id !== peopleWithFaces[editedPersonIndex].person?.id}
+    <h2 class="mb-8 mt-4 uppercase">{$t('all_people')}</h2>
+    {#if isShowLoadingPeople}
+      <div class="flex w-full justify-center">
+        <LoadingSpinner />
+      </div>
+    {:else}
+      <div class="immich-scrollbar mt-4 flex flex-wrap gap-2 overflow-y-auto">
+        {#each showPeople as person (person.id)}
+          {#if !editedFace.person || person.id !== editedFace.person.id}
             <div class="w-fit">
-              <button class="w-[90px]" on:click={() => dispatch('reassign', person)}>
+              <button type="button" class="w-[90px]" onclick={() => onReassign(person)}>
                 <div class="relative">
                   <ImageThumbnail
                     curve
                     shadow
-                    url={api.getPeopleThumbnailUrl(person.id)}
-                    altText={getPersonNameWithHiddenValue(person.name, person.isHidden)}
-                    title={getPersonNameWithHiddenValue(person.name, person.isHidden)}
+                    url={getPeopleThumbnailUrl(person)}
+                    altText={$getPersonNameWithHiddenValue(person.name, person.isHidden)}
+                    title={$getPersonNameWithHiddenValue(person.name, person.isHidden)}
                     widthStyle="90px"
                     heightStyle="90px"
-                    thumbhash={null}
                     hidden={person.isHidden}
                   />
                 </div>
 
-                <p class="mt-1 truncate font-medium" title={getPersonNameWithHiddenValue(person.name, person.isHidden)}>
+                <p
+                  class="mt-1 truncate font-medium"
+                  title={$getPersonNameWithHiddenValue(person.name, person.isHidden)}
+                >
                   {person.name}
                 </p>
               </button>
             </div>
           {/if}
         {/each}
-      {:else}
-        {#each searchedPeople as person (person.id)}
-          {#if person.id !== peopleWithFaces[editedPersonIndex].person?.id}
-            <div class="w-fit">
-              <button class="w-[90px]" on:click={() => dispatch('reassign', person)}>
-                <div class="relative">
-                  <ImageThumbnail
-                    curve
-                    shadow
-                    url={api.getPeopleThumbnailUrl(person.id)}
-                    altText={getPersonNameWithHiddenValue(person.name, person.isHidden)}
-                    title={getPersonNameWithHiddenValue(person.name, person.isHidden)}
-                    widthStyle="90px"
-                    heightStyle="90px"
-                    thumbhash={null}
-                    hidden={person.isHidden}
-                  />
-                </div>
-                <p class="mt-1 truncate font-medium" title={person.name}>{person.name}</p>
-              </button>
-            </div>
-          {/if}
-        {/each}
-      {/if}
-    </div>
+      </div>
+    {/if}
   </div>
 </section>

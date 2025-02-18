@@ -1,39 +1,39 @@
 <script lang="ts">
   import ChangeDate from '$lib/components/shared-components/change-date.svelte';
+  import { user } from '$lib/stores/user.store';
+  import { getSelectedAssets } from '$lib/utils/asset-utils';
   import { handleError } from '$lib/utils/handle-error';
-  import { api } from '@api';
+  import { updateAssets } from '@immich/sdk';
   import { DateTime } from 'luxon';
   import MenuOption from '../../shared-components/context-menu/menu-option.svelte';
   import { getAssetControlContext } from '../asset-select-control-bar.svelte';
-  import { user } from '$lib/stores/user.store';
-  import { getSelectedAssets } from '$lib/utils/asset-utils';
-  export let menuItem = false;
+  import { mdiCalendarEditOutline } from '@mdi/js';
+  import { t } from 'svelte-i18n';
+  interface Props {
+    menuItem?: boolean;
+  }
+
+  let { menuItem = false }: Props = $props();
   const { clearSelect, getOwnedAssets } = getAssetControlContext();
 
-  let isShowChangeDate = false;
+  let isShowChangeDate = $state(false);
 
   const handleConfirm = async (dateTimeOriginal: string) => {
     isShowChangeDate = false;
     const ids = getSelectedAssets(getOwnedAssets(), $user);
 
     try {
-      await api.assetApi.updateAssets({
-        assetBulkUpdateDto: { ids, dateTimeOriginal },
-      });
+      await updateAssets({ assetBulkUpdateDto: { ids, dateTimeOriginal } });
     } catch (error) {
-      handleError(error, 'Unable to change date');
+      handleError(error, $t('errors.unable_to_change_date'));
     }
     clearSelect();
   };
 </script>
 
 {#if menuItem}
-  <MenuOption text="Change date" on:click={() => (isShowChangeDate = true)} />
+  <MenuOption text={$t('change_date')} icon={mdiCalendarEditOutline} onClick={() => (isShowChangeDate = true)} />
 {/if}
 {#if isShowChangeDate}
-  <ChangeDate
-    initialDate={DateTime.now()}
-    on:confirm={({ detail: date }) => handleConfirm(date)}
-    on:cancel={() => (isShowChangeDate = false)}
-  />
+  <ChangeDate initialDate={DateTime.now()} onConfirm={handleConfirm} onCancel={() => (isShowChangeDate = false)} />
 {/if}

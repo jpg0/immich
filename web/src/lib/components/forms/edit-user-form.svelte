@@ -1,114 +1,137 @@
 <script lang="ts">
-  import { api, type UserResponseDto } from '@api';
-  import { createEventDispatcher } from 'svelte';
-  import { notificationController, NotificationType } from '../shared-components/notification/notification';
-  import Button from '../elements/buttons/button.svelte';
-  import ConfirmDialogue from '$lib/components/shared-components/confirm-dialogue.svelte';
-  import Icon from '$lib/components/elements/icon.svelte';
-  import { mdiAccountEditOutline, mdiClose } from '@mdi/js';
+  import FullScreenModal from '$lib/components/shared-components/full-screen-modal.svelte';
   import { AppRoute } from '$lib/constants';
-  import CircleIconButton from '../elements/buttons/circle-icon-button.svelte';
+  import { userInteraction } from '$lib/stores/user.svelte';
   import { handleError } from '$lib/utils/handle-error';
-  import { convertFromBytes, convertToBytes } from '$lib/utils/byte-converter';
+  import { updateUserAdmin, type UserAdminResponseDto } from '@immich/sdk';
+  import { mdiAccountEditOutline } from '@mdi/js';
+  import Button from '../elements/buttons/button.svelte';
+  import { dialogController } from '$lib/components/shared-components/dialog/dialog';
+  import { t } from 'svelte-i18n';
+  import { ByteUnit, convertFromBytes, convertToBytes } from '$lib/utils/byte-units';
 
-  export let user: UserResponseDto;
-  export let canResetPassword = true;
+  interface Props {
+    user: UserAdminResponseDto;
+    canResetPassword?: boolean;
+    newPassword: string;
+    onClose: () => void;
+    onResetPasswordSuccess: () => void;
+    onEditSuccess: () => void;
+  }
 
-  let error: string;
-  let success: string;
+  let {
+    user,
+    canResetPassword = true,
+    newPassword = $bindable(),
+    onClose,
+    onResetPasswordSuccess,
+    onEditSuccess,
+  }: Props = $props();
 
-  let isShowResetPasswordConfirmation = false;
+  let quotaSize = $state(user.quotaSizeInBytes ? convertFromBytes(user.quotaSizeInBytes, ByteUnit.GiB) : null);
 
-  const dispatch = createEventDispatcher<{
-    close: void;
-    resetPasswordSuccess: void;
-    editSuccess: void;
-  }>();
+  const previousQutoa = user.quotaSizeInBytes;
 
-  let quotaSize = user.quotaSizeInBytes ? convertFromBytes(user.quotaSizeInBytes, 'GiB') : null;
+  let quotaSizeWarning = $derived(
+    previousQutoa !== convertToBytes(Number(quotaSize), ByteUnit.GiB) &&
+      !!quotaSize &&
+      userInteraction.serverInfo &&
+      convertToBytes(Number(quotaSize), ByteUnit.GiB) > userInteraction.serverInfo.diskSizeRaw,
+  );
 
   const editUser = async () => {
     try {
-      const { id, email, name, storageLabel, externalPath } = user;
-      const { status } = await api.userApi.updateUser({
-        updateUserDto: {
-          id,
+      const { id, email, name, storageLabel } = user;
+      await updateUserAdmin({
+        id,
+        userAdminUpdateDto: {
           email,
           name,
           storageLabel: storageLabel || '',
-          externalPath: externalPath || '',
-          quotaSizeInBytes: quotaSize ? convertToBytes(Number(quotaSize), 'GiB') : null,
+          quotaSizeInBytes: quotaSize ? convertToBytes(Number(quotaSize), ByteUnit.GiB) : null,
         },
       });
 
-      if (status === 200) {
-        dispatch('editSuccess');
-      }
+      onEditSuccess();
     } catch (error) {
-      handleError(error, 'Unable to update user');
+      handleError(error, $t('errors.unable_to_update_user'));
     }
   };
 
   const resetPassword = async () => {
-    try {
-      const defaultPassword = 'password';
+    const isConfirmed = await dialogController.show({
+      prompt: $t('admin.confirm_user_password_reset', { values: { user: user.name } }),
+    });
 
-      const { status } = await api.userApi.updateUser({
-        updateUserDto: {
-          id: user.id,
-          password: defaultPassword,
+    if (!isConfirmed) {
+      return;
+    }
+
+    try {
+      newPassword = generatePassword();
+
+      await updateUserAdmin({
+        id: user.id,
+        userAdminUpdateDto: {
+          password: newPassword,
           shouldChangePassword: true,
         },
       });
 
-      if (status == 200) {
-        dispatch('resetPasswordSuccess');
-      }
-    } catch (e) {
-      console.error('Error reseting user password', e);
-      notificationController.show({
-        message: 'Error reseting user password, check console for more details',
-        type: NotificationType.Error,
-      });
-    } finally {
-      isShowResetPasswordConfirmation = false;
+      onResetPasswordSuccess();
+    } catch (error) {
+      handleError(error, $t('errors.unable_to_reset_password'));
     }
+  };
+
+  // TODO move password reset server-side
+  function generatePassword(length: number = 16) {
+    let generatedPassword = '';
+
+    const characterSet = '0123456789' + 'abcdefghijklmnopqrstuvwxyz' + 'ABCDEFGHIJKLMNOPQRSTUVWXYZ' + ',.-{}+!#$%/()=?';
+
+    for (let i = 0; i < length; i++) {
+      let randomNumber = crypto.getRandomValues(new Uint32Array(1))[0];
+      randomNumber = randomNumber / 2 ** 32;
+      randomNumber = Math.floor(randomNumber * characterSet.length);
+
+      generatedPassword += characterSet[randomNumber];
+    }
+
+    return generatedPassword;
+  }
+
+  const onSubmit = async (event: Event) => {
+    event.preventDefault();
+    await editUser();
   };
 </script>
 
-<div
-  class="relative max-h-screen w-[500px] max-w-[95vw] overflow-y-auto rounded-3xl border bg-immich-bg p-4 py-8 shadow-sm dark:border-immich-dark-gray dark:bg-immich-dark-gray dark:text-immich-dark-fg"
->
-  <div class="absolute top-0 right-0 px-2 py-2 h-fit">
-    <CircleIconButton icon={mdiClose} on:click={() => dispatch('close')} />
-  </div>
-
-  <div
-    class="flex flex-col place-content-center place-items-center gap-4 px-4 text-immich-primary dark:text-immich-dark-primary"
-  >
-    <Icon path={mdiAccountEditOutline} size="4em" />
-    <h1 class="text-2xl font-medium text-immich-primary dark:text-immich-dark-primary">Edit user</h1>
-  </div>
-
-  <form on:submit|preventDefault={editUser} autocomplete="off">
-    <div class="m-4 flex flex-col gap-2">
-      <label class="immich-form-label" for="email">Email</label>
+<FullScreenModal title={$t('edit_user')} icon={mdiAccountEditOutline} {onClose}>
+  <form onsubmit={onSubmit} autocomplete="off" id="edit-user-form">
+    <div class="my-4 flex flex-col gap-2">
+      <label class="immich-form-label" for="email">{$t('email')}</label>
       <input class="immich-form-input" id="email" name="email" type="email" bind:value={user.email} />
     </div>
 
-    <div class="m-4 flex flex-col gap-2">
-      <label class="immich-form-label" for="name">Name</label>
+    <div class="my-4 flex flex-col gap-2">
+      <label class="immich-form-label" for="name">{$t('name')}</label>
       <input class="immich-form-input" id="name" name="name" type="text" required bind:value={user.name} />
     </div>
 
-    <div class="m-4 flex flex-col gap-2">
-      <label class="immich-form-label" for="quotaSize">Quota Size (GiB)</label>
+    <div class="my-4 flex flex-col gap-2">
+      <label class="flex items-center gap-2 immich-form-label" for="quotaSize">
+        {$t('admin.quota_size_gib')}
+        {#if quotaSizeWarning}
+          <p class="text-red-400 text-sm">{$t('errors.quota_higher_than_disk_size')}</p>
+        {/if}</label
+      >
       <input class="immich-form-input" id="quotaSize" name="quotaSize" type="number" min="0" bind:value={quotaSize} />
-      <p>Note: Enter 0 for unlimited quota</p>
+      <p>{$t('admin.note_unlimited_quota')}</p>
     </div>
 
-    <div class="m-4 flex flex-col gap-2">
-      <label class="immich-form-label" for="storage-label">Storage Label</label>
+    <div class="my-4 flex flex-col gap-2">
+      <label class="immich-form-label" for="storage-label">{$t('storage_label')}</label>
       <input
         class="immich-form-input"
         id="storage-label"
@@ -118,58 +141,18 @@
       />
 
       <p>
-        Note: To apply the Storage Label to previously uploaded assets, run the
+        {$t('admin.note_apply_storage_label_previous_assets')}
         <a href={AppRoute.ADMIN_JOBS} class="text-immich-primary dark:text-immich-dark-primary">
-          Storage Migration Job</a
-        >
+          {$t('admin.storage_template_migration_job')}
+        </a>
       </p>
-    </div>
-
-    <div class="m-4 flex flex-col gap-2">
-      <label class="immich-form-label" for="external-path">External Path</label>
-      <input
-        class="immich-form-input"
-        id="external-path"
-        name="external-path"
-        type="text"
-        bind:value={user.externalPath}
-      />
-
-      <p>
-        Note: Absolute path of parent import directory. A user can only import files if they exist at or under this
-        path.
-      </p>
-    </div>
-
-    {#if error}
-      <p class="ml-4 text-sm text-red-400">{error}</p>
-    {/if}
-
-    {#if success}
-      <p class="ml-4 text-sm text-immich-primary">{success}</p>
-    {/if}
-    <div class="mt-8 flex w-full gap-4 px-4">
-      {#if canResetPassword}
-        <Button color="light-red" fullwidth on:click={() => (isShowResetPasswordConfirmation = true)}
-          >Reset password</Button
-        >
-      {/if}
-      <Button type="submit" fullwidth>Confirm</Button>
     </div>
   </form>
-</div>
 
-{#if isShowResetPasswordConfirmation}
-  <ConfirmDialogue
-    title="Reset Password"
-    confirmText="Reset"
-    on:confirm={resetPassword}
-    on:cancel={() => (isShowResetPasswordConfirmation = false)}
-  >
-    <svelte:fragment slot="prompt">
-      <p>
-        Are you sure you want to reset <b>{user.name}</b>'s password?
-      </p>
-    </svelte:fragment>
-  </ConfirmDialogue>
-{/if}
+  {#snippet stickyBottom()}
+    {#if canResetPassword}
+      <Button color="light-red" fullwidth onclick={resetPassword}>{$t('reset_password')}</Button>
+    {/if}
+    <Button type="submit" fullwidth form="edit-user-form">{$t('confirm')}</Button>
+  {/snippet}
+</FullScreenModal>

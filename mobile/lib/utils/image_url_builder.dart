@@ -1,28 +1,28 @@
-import 'package:immich_mobile/shared/models/album.dart';
-import 'package:immich_mobile/shared/models/asset.dart';
-import 'package:immich_mobile/shared/models/store.dart';
-import 'package:isar/isar.dart';
+import 'package:immich_mobile/constants/constants.dart';
+import 'package:immich_mobile/entities/album.entity.dart';
+import 'package:immich_mobile/entities/asset.entity.dart';
+import 'package:immich_mobile/entities/store.entity.dart';
 import 'package:openapi/api.dart';
 
 String getThumbnailUrl(
   final Asset asset, {
-  ThumbnailFormat type = ThumbnailFormat.WEBP,
+  AssetMediaSize type = AssetMediaSize.thumbnail,
 }) {
   return getThumbnailUrlForRemoteId(asset.remoteId!, type: type);
 }
 
 String getThumbnailCacheKey(
   final Asset asset, {
-  ThumbnailFormat type = ThumbnailFormat.WEBP,
+  AssetMediaSize type = AssetMediaSize.thumbnail,
 }) {
   return getThumbnailCacheKeyForRemoteId(asset.remoteId!, type: type);
 }
 
 String getThumbnailCacheKeyForRemoteId(
   final String id, {
-  ThumbnailFormat type = ThumbnailFormat.WEBP,
+  AssetMediaSize type = AssetMediaSize.thumbnail,
 }) {
-  if (type == ThumbnailFormat.WEBP) {
+  if (type == AssetMediaSize.thumbnail) {
     return 'thumbnail-image-$id';
   } else {
     return '${id}_previewStage';
@@ -31,7 +31,7 @@ String getThumbnailCacheKeyForRemoteId(
 
 String getAlbumThumbnailUrl(
   final Album album, {
-  ThumbnailFormat type = ThumbnailFormat.WEBP,
+  AssetMediaSize type = AssetMediaSize.thumbnail,
 }) {
   if (album.thumbnail.value?.remoteId == null) {
     return '';
@@ -44,7 +44,7 @@ String getAlbumThumbnailUrl(
 
 String getAlbumThumbNailCacheKey(
   final Album album, {
-  ThumbnailFormat type = ThumbnailFormat.WEBP,
+  AssetMediaSize type = AssetMediaSize.thumbnail,
 }) {
   if (album.thumbnail.value?.remoteId == null) {
     return '';
@@ -55,23 +55,23 @@ String getAlbumThumbNailCacheKey(
   );
 }
 
-String getImageUrl(final Asset asset) {
-  return '${Store.get(StoreKey.serverEndpoint)}/asset/file/${asset.remoteId}?isThumb=false';
+String getOriginalUrlForRemoteId(final String id) {
+  return '${Store.get(StoreKey.serverEndpoint)}/assets/$id/original';
 }
 
 String getImageCacheKey(final Asset asset) {
   // Assets from response DTOs do not have an isar id, querying which would give us the default autoIncrement id
-  final isFromDto = asset.id == Isar.autoIncrement;
+  final isFromDto = asset.id == noDbId;
   return '${isFromDto ? asset.remoteId : asset.id}_fullStage';
 }
 
 String getThumbnailUrlForRemoteId(
   final String id, {
-  ThumbnailFormat type = ThumbnailFormat.WEBP,
+  AssetMediaSize type = AssetMediaSize.thumbnail,
 }) {
-  return '${Store.get(StoreKey.serverEndpoint)}/asset/thumbnail/$id?format=${type.value}';
+  return '${Store.get(StoreKey.serverEndpoint)}/assets/$id/thumbnail?size=${type.value}';
 }
 
 String getFaceThumbnailUrl(final String personId) {
-  return '${Store.get(StoreKey.serverEndpoint)}/person/$personId/thumbnail';
+  return '${Store.get(StoreKey.serverEndpoint)}/people/$personId/thumbnail';
 }

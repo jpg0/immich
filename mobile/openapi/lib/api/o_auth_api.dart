@@ -1,7 +1,7 @@
 //
 // AUTO-GENERATED FILE, DO NOT MODIFY!
 //
-// @dart=2.12
+// @dart=2.18
 
 // ignore_for_file: unused_element, unused_import
 // ignore_for_file: always_put_required_named_parameters_first
@@ -63,58 +63,6 @@ class OAuthApi {
     return null;
   }
 
-  /// @deprecated use feature flags and /oauth/authorize
-  ///
-  /// Note: This method returns the HTTP [Response].
-  ///
-  /// Parameters:
-  ///
-  /// * [OAuthConfigDto] oAuthConfigDto (required):
-  Future<Response> generateOAuthConfigWithHttpInfo(OAuthConfigDto oAuthConfigDto,) async {
-    // ignore: prefer_const_declarations
-    final path = r'/oauth/config';
-
-    // ignore: prefer_final_locals
-    Object? postBody = oAuthConfigDto;
-
-    final queryParams = <QueryParam>[];
-    final headerParams = <String, String>{};
-    final formParams = <String, String>{};
-
-    const contentTypes = <String>['application/json'];
-
-
-    return apiClient.invokeAPI(
-      path,
-      'POST',
-      queryParams,
-      postBody,
-      headerParams,
-      formParams,
-      contentTypes.isEmpty ? null : contentTypes.first,
-    );
-  }
-
-  /// @deprecated use feature flags and /oauth/authorize
-  ///
-  /// Parameters:
-  ///
-  /// * [OAuthConfigDto] oAuthConfigDto (required):
-  Future<OAuthConfigResponseDto?> generateOAuthConfig(OAuthConfigDto oAuthConfigDto,) async {
-    final response = await generateOAuthConfigWithHttpInfo(oAuthConfigDto,);
-    if (response.statusCode >= HttpStatus.badRequest) {
-      throw ApiException(response.statusCode, await _decodeBodyBytes(response));
-    }
-    // When a remote server returns no body with a status of 204, we shall not decode it.
-    // At the time of writing this, `dart:convert` will throw an "Unexpected end of input"
-    // FormatException when trying to decode an empty string.
-    if (response.body.isNotEmpty && response.statusCode != HttpStatus.noContent) {
-      return await apiClient.deserializeAsync(await _decodeBodyBytes(response), 'OAuthConfigResponseDto',) as OAuthConfigResponseDto;
-    
-    }
-    return null;
-  }
-
   /// Performs an HTTP 'POST /oauth/link' operation and returns the [Response].
   /// Parameters:
   ///
@@ -147,7 +95,7 @@ class OAuthApi {
   /// Parameters:
   ///
   /// * [OAuthCallbackDto] oAuthCallbackDto (required):
-  Future<UserResponseDto?> linkOAuthAccount(OAuthCallbackDto oAuthCallbackDto,) async {
+  Future<UserAdminResponseDto?> linkOAuthAccount(OAuthCallbackDto oAuthCallbackDto,) async {
     final response = await linkOAuthAccountWithHttpInfo(oAuthCallbackDto,);
     if (response.statusCode >= HttpStatus.badRequest) {
       throw ApiException(response.statusCode, await _decodeBodyBytes(response));
@@ -156,7 +104,7 @@ class OAuthApi {
     // At the time of writing this, `dart:convert` will throw an "Unexpected end of input"
     // FormatException when trying to decode an empty string.
     if (response.body.isNotEmpty && response.statusCode != HttpStatus.noContent) {
-      return await apiClient.deserializeAsync(await _decodeBodyBytes(response), 'UserResponseDto',) as UserResponseDto;
+      return await apiClient.deserializeAsync(await _decodeBodyBytes(response), 'UserAdminResponseDto',) as UserAdminResponseDto;
     
     }
     return null;
@@ -268,7 +216,7 @@ class OAuthApi {
     );
   }
 
-  Future<UserResponseDto?> unlinkOAuthAccount() async {
+  Future<UserAdminResponseDto?> unlinkOAuthAccount() async {
     final response = await unlinkOAuthAccountWithHttpInfo();
     if (response.statusCode >= HttpStatus.badRequest) {
       throw ApiException(response.statusCode, await _decodeBodyBytes(response));
@@ -277,7 +225,7 @@ class OAuthApi {
     // At the time of writing this, `dart:convert` will throw an "Unexpected end of input"
     // FormatException when trying to decode an empty string.
     if (response.body.isNotEmpty && response.statusCode != HttpStatus.noContent) {
-      return await apiClient.deserializeAsync(await _decodeBodyBytes(response), 'UserResponseDto',) as UserResponseDto;
+      return await apiClient.deserializeAsync(await _decodeBodyBytes(response), 'UserAdminResponseDto',) as UserAdminResponseDto;
     
     }
     return null;

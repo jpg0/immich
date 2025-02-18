@@ -72,14 +72,9 @@ const config = {
   themeConfig:
     /** @type {import('@docusaurus/preset-classic').ThemeConfig} */
     ({
-      colorMode: {
-        defaultMode: 'dark',
-      },
       announcementBar: {
         id: 'site_announcement_immich',
         content: `⚠️ The project is under <strong>very active</strong> development. Expect bugs and changes. Do not use it as <strong>the only way</strong> to store your photos and videos!`,
-        backgroundColor: '#593f00',
-        textColor: '#ffefc9',
         isCloseable: false,
       },
       docs: {
@@ -88,22 +83,26 @@ const config = {
         },
       },
       navbar: {
-        title: 'IMMICH',
         logo: {
-          alt: 'Immich University Logo',
-          src: 'img/color-logo.png',
-          srcDark: 'img/logo.png',
+          alt: 'Immich Logo',
+          src: 'img/immich-logo-inline-light.png',
+          srcDark: 'img/immich-logo-inline-dark.png',
+          className: 'rounded-none',
         },
         items: [
+          {
+            type: 'custom-versionSwitcher',
+            position: 'right',
+          },
           {
             to: '/docs/overview/introduction',
             position: 'right',
             label: 'Docs',
           },
           {
-            to: '/milestones',
+            to: '/roadmap',
             position: 'right',
-            label: 'Milestones',
+            label: 'Roadmap',
           },
           {
             to: '/docs/api',
@@ -111,13 +110,18 @@ const config = {
             label: 'API',
           },
           {
-            to: '/blog',
+            href: 'https://immich.store',
             position: 'right',
-            label: 'Blog',
+            label: 'Merch',
           },
           {
             href: 'https://github.com/immich-app/immich',
             label: 'GitHub',
+            position: 'right',
+          },
+          {
+            href: 'https://discord.immich.app',
+            label: 'Discord',
             position: 'right',
           },
         ],
@@ -136,39 +140,63 @@ const config = {
                 label: 'Installation',
                 to: '/docs/install/requirements',
               },
+              {
+                label: 'Contributing',
+                to: '/docs/overview/support-the-project',
+              },
+              {
+                label: 'Privacy Policy',
+                to: '/privacy-policy',
+              },
             ],
           },
           {
-            title: 'Community',
+            title: 'Documentation',
             items: [
               {
-                label: 'Discord',
-                href: 'https://discord.com/invite/D8JsnBEuKb',
+                label: 'Roadmap',
+                to: '/roadmap',
+              },
+              {
+                label: 'API',
+                to: '/docs/api',
+              },
+              {
+                label: 'Cursed Knowledge',
+                to: '/cursed-knowledge',
               },
             ],
           },
           {
             title: 'Links',
             items: [
-              // {
-              //   label: "Blog",
-              //   to: "/blog",
-              // },
               {
                 label: 'GitHub',
                 href: 'https://github.com/immich-app/immich',
               },
+              {
+                label: 'YouTube',
+                href: 'https://www.youtube.com/@immich-app',
+              },
+              {
+                label: 'Discord',
+                href: 'https://discord.immich.app',
+              },
+              {
+                label: 'Reddit',
+                href: 'https://www.reddit.com/r/immich/',
+              },
             ],
           },
         ],
-        copyright: `Immich is available as open source under the terms of the MIT License.`,
+        copyright: `Immich is available as open source under the terms of the GNU AGPL v3 License.`,
       },
       prism: {
         theme: prism.themes.github,
         darkTheme: prism.themes.dracula,
         additionalLanguages: ['sql', 'diff', 'bash', 'powershell', 'nginx'],
       },
-      image: 'overview/img/feature-panel.png',
+      image: 'img/feature-panel.png',
     }),
 };
 

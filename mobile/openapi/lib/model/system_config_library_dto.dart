@@ -1,7 +1,7 @@
 //
 // AUTO-GENERATED FILE, DO NOT MODIFY!
 //
-// @dart=2.12
+// @dart=2.18
 
 // ignore_for_file: unused_element, unused_import
 // ignore_for_file: always_put_required_named_parameters_first
@@ -14,25 +14,31 @@ class SystemConfigLibraryDto {
   /// Returns a new [SystemConfigLibraryDto] instance.
   SystemConfigLibraryDto({
     required this.scan,
+    required this.watch,
   });
 
   SystemConfigLibraryScanDto scan;
 
+  SystemConfigLibraryWatchDto watch;
+
   @override
   bool operator ==(Object other) => identical(this, other) || other is SystemConfigLibraryDto &&
-    other.scan == scan;
+    other.scan == scan &&
+    other.watch == watch;
 
   @override
   int get hashCode =>
     // ignore: unnecessary_parenthesis
-    (scan.hashCode);
+    (scan.hashCode) +
+    (watch.hashCode);
 
   @override
-  String toString() => 'SystemConfigLibraryDto[scan=$scan]';
+  String toString() => 'SystemConfigLibraryDto[scan=$scan, watch=$watch]';
 
   Map<String, dynamic> toJson() {
     final json = <String, dynamic>{};
       json[r'scan'] = this.scan;
+      json[r'watch'] = this.watch;
     return json;
   }
 
@@ -40,11 +46,13 @@ class SystemConfigLibraryDto {
   /// [value] if it's a [Map], null otherwise.
   // ignore: prefer_constructors_over_static_methods
   static SystemConfigLibraryDto? fromJson(dynamic value) {
+    upgradeDto(value, "SystemConfigLibraryDto");
     if (value is Map) {
       final json = value.cast<String, dynamic>();
 
       return SystemConfigLibraryDto(
         scan: SystemConfigLibraryScanDto.fromJson(json[r'scan'])!,
+        watch: SystemConfigLibraryWatchDto.fromJson(json[r'watch'])!,
       );
     }
     return null;
@@ -93,6 +101,7 @@ class SystemConfigLibraryDto {
   /// The list of required keys that must be present in a JSON.
   static const requiredKeys = <String>{
     'scan',
+    'watch',
   };
 }
 

@@ -5,21 +5,25 @@
     NotificationType,
     notificationController,
   } from '$lib/components/shared-components/notification/notification';
-  import { handleError } from '$lib/utils/handle-error';
-  import { api } from '@api';
-  import { getAssetControlContext } from '../asset-select-control-bar.svelte';
-  import { mdiHeartMinusOutline, mdiHeartOutline, mdiTimerSand } from '@mdi/js';
   import type { OnFavorite } from '$lib/utils/actions';
+  import { handleError } from '$lib/utils/handle-error';
+  import { updateAssets } from '@immich/sdk';
+  import { mdiHeartMinusOutline, mdiHeartOutline, mdiTimerSand } from '@mdi/js';
+  import { getAssetControlContext } from '../asset-select-control-bar.svelte';
+  import { t } from 'svelte-i18n';
 
-  export let onFavorite: OnFavorite | undefined = undefined;
+  interface Props {
+    onFavorite: OnFavorite;
+    menuItem?: boolean;
+    removeFavorite: boolean;
+  }
 
-  export let menuItem = false;
-  export let removeFavorite: boolean;
+  let { onFavorite, menuItem = false, removeFavorite }: Props = $props();
 
-  $: text = removeFavorite ? 'Remove from Favorites' : 'Favorite';
-  $: icon = removeFavorite ? mdiHeartMinusOutline : mdiHeartOutline;
+  let text = $derived(removeFavorite ? $t('remove_from_favorites') : $t('to_favorite'));
+  let icon = $derived(removeFavorite ? mdiHeartMinusOutline : mdiHeartOutline);
 
-  let loading = false;
+  let loading = $state(false);
 
   const { clearSelect, getOwnedAssets } = getAssetControlContext();
 
@@ -28,28 +32,30 @@
     loading = true;
 
     try {
-      const assets = Array.from(getOwnedAssets()).filter((asset) => asset.isFavorite !== isFavorite);
+      const assets = [...getOwnedAssets()].filter((asset) => asset.isFavorite !== isFavorite);
 
       const ids = assets.map(({ id }) => id);
 
       if (ids.length > 0) {
-        await api.assetApi.updateAssets({ assetBulkUpdateDto: { ids, isFavorite } });
+        await updateAssets({ assetBulkUpdateDto: { ids, isFavorite } });
       }
 
       for (const asset of assets) {
         asset.isFavorite = isFavorite;
       }
 
-      onFavorite?.(ids, isFavorite);
+      onFavorite(ids, isFavorite);
 
       notificationController.show({
-        message: isFavorite ? `Added ${ids.length} to favorites` : `Removed ${ids.length} from favorites`,
+        message: isFavorite
+          ? $t('added_to_favorites_count', { values: { count: ids.length } })
+          : $t('removed_from_favorites_count', { values: { count: ids.length } }),
         type: NotificationType.Info,
       });
 
       clearSelect();
     } catch (error) {
-      handleError(error, `Unable to ${isFavorite ? 'add to' : 'remove from'} favorites`);
+      handleError(error, $t('errors.unable_to_add_remove_favorites', { values: { favorite: isFavorite } }));
     } finally {
       loading = false;
     }
@@ -57,13 +63,13 @@
 </script>
 
 {#if menuItem}
-  <MenuOption {text} on:click={handleFavorite} />
+  <MenuOption {text} {icon} onClick={handleFavorite} />
 {/if}
 
 {#if !menuItem}
   {#if loading}
-    <CircleIconButton title="Loading" icon={mdiTimerSand} />
+    <CircleIconButton title={$t('loading')} icon={mdiTimerSand} onclick={() => {}} />
   {:else}
-    <CircleIconButton title={text} {icon} on:click={handleFavorite} />
+    <CircleIconButton title={text} {icon} onclick={handleFavorite} />
   {/if}
 {/if}

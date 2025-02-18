@@ -1,52 +1,52 @@
 <script lang="ts">
-  import type { SearchExploreResponseDto } from '@api';
-  import type { PageData } from './$types';
   import UserPageLayout from '$lib/components/layouts/user-page-layout.svelte';
-  import { mdiMapMarkerOff } from '@mdi/js';
-  import Icon from '$lib/components/elements/icon.svelte';
-  import { AppRoute } from '$lib/constants';
-  import Thumbnail from '$lib/components/assets/thumbnail/thumbnail.svelte';
+  import PlacesControls from '$lib/components/places-page/places-controls.svelte';
+  import type { PageData } from './$types';
+  import { type AssetResponseDto } from '@immich/sdk';
+  import { t } from 'svelte-i18n';
+  import { locale } from '$lib/stores/preferences.store';
+  import Places from '$lib/components/places-page/places-list.svelte';
+  import { placesViewSettings } from '$lib/stores/preferences.store';
 
-  export let data: PageData;
+  interface Props {
+    data: PageData;
+  }
 
-  const CITY_FIELD = 'exifInfo.city';
-  const getFieldItems = (items: SearchExploreResponseDto[]) => {
-    const targetField = items.find((item) => item.fieldName === CITY_FIELD);
-    return targetField?.items || [];
+  let { data }: Props = $props();
+
+  type AssetWithCity = AssetResponseDto & {
+    exifInfo: {
+      city: string;
+    };
   };
 
-  $: places = getFieldItems(data.items);
-  $: hasPlaces = places.length > 0;
+  let searchQuery = $state('');
+  let searchResultCount = $state(0);
+  let placesGroups: string[] = $state([]);
 
-  let innerHeight: number;
+  let places = $derived(data.items.filter((item): item is AssetWithCity => !!item.exifInfo?.city));
+  let countVisiblePlaces = $derived(searchQuery ? searchResultCount : places.length);
+
+  let innerHeight: number = $state(0);
 </script>
 
 <svelte:window bind:innerHeight />
 
-<UserPageLayout title="Places">
-  {#if hasPlaces}
-    <div class="flex flex-row flex-wrap gap-4">
-      {#each places as item (item.data.id)}
-        <a class="relative" href="{AppRoute.SEARCH}?q={item.value}" draggable="false">
-          <div
-            class="flex w-[calc((100vw-(72px+5rem))/2)] max-w-[156px] justify-center overflow-hidden rounded-xl brightness-75 filter"
-          >
-            <Thumbnail thumbnailSize={156} asset={item.data} readonly />
-          </div>
-          <span
-            class="w-100 absolute bottom-2 w-full text-ellipsis px-1 text-center text-sm font-medium capitalize text-white backdrop-blur-[1px] hover:cursor-pointer"
-          >
-            {item.value}
-          </span>
-        </a>
-      {/each}
+<UserPageLayout
+  title={$t('places')}
+  description={countVisiblePlaces === 0 && !searchQuery ? undefined : `(${countVisiblePlaces.toLocaleString($locale)})`}
+>
+  {#snippet buttons()}
+    <div class="flex place-items-center gap-2">
+      <PlacesControls {placesGroups} bind:searchQuery />
     </div>
-  {:else}
-    <div class="flex min-h-[calc(66vh_-_11rem)] w-full place-content-center items-center dark:text-white">
-      <div class="flex flex-col content-center items-center text-center">
-        <Icon path={mdiMapMarkerOff} size="3.5em" />
-        <p class="mt-5 text-3xl font-medium">No places</p>
-      </div>
-    </div>
-  {/if}
+  {/snippet}
+
+  <Places
+    {places}
+    userSettings={$placesViewSettings}
+    {searchQuery}
+    bind:searchResultCount
+    bind:placesGroupIds={placesGroups}
+  />
 </UserPageLayout>

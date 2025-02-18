@@ -1,54 +1,49 @@
 <script lang="ts">
-  import { api, type UserResponseDto } from '@api';
-  import BaseModal from '../shared-components/base-modal.svelte';
-  import UserAvatar from '../shared-components/user-avatar.svelte';
-  import ImmichLogo from '../shared-components/immich-logo.svelte';
+  import FullScreenModal from '$lib/components/shared-components/full-screen-modal.svelte';
+  import { getPartners, PartnerDirection, searchUsers, type UserResponseDto } from '@immich/sdk';
+  import { onMount } from 'svelte';
+  import { t } from 'svelte-i18n';
   import Button from '../elements/buttons/button.svelte';
-  import { createEventDispatcher, onMount } from 'svelte';
+  import UserAvatar from '../shared-components/user-avatar.svelte';
 
-  export let user: UserResponseDto;
+  interface Props {
+    user: UserResponseDto;
+    onClose: () => void;
+    onAddUsers: (users: UserResponseDto[]) => void;
+  }
 
-  let availableUsers: UserResponseDto[] = [];
-  let selectedUsers: UserResponseDto[] = [];
+  let { user, onClose, onAddUsers }: Props = $props();
 
-  const dispatch = createEventDispatcher<{ close: void; 'add-users': UserResponseDto[] }>();
+  let availableUsers: UserResponseDto[] = $state([]);
+  let selectedUsers: UserResponseDto[] = $state([]);
 
   onMount(async () => {
-    // TODO: update endpoint to have a query param for deleted users
-    let { data: users } = await api.userApi.getAllUsers({ isAll: false });
+    let users = await searchUsers();
 
-    // remove invalid users
-    users = users.filter((_user) => !(_user.deletedAt || _user.id === user.id));
+    // remove current user
+    users = users.filter((_user) => _user.id !== user.id);
 
     // exclude partners from the list of users available for selection
-    const { data: partners } = await api.partnerApi.getPartners({ direction: 'shared-by' });
-    const partnerIds = partners.map((partner) => partner.id);
-    availableUsers = users.filter((user) => !partnerIds.includes(user.id));
+    const partners = await getPartners({ direction: PartnerDirection.SharedBy });
+    const partnerIds = new Set(partners.map((partner) => partner.id));
+    availableUsers = users.filter((user) => !partnerIds.has(user.id));
   });
 
   const selectUser = (user: UserResponseDto) => {
-    if (selectedUsers.includes(user)) {
-      selectedUsers = selectedUsers.filter((selectedUser) => selectedUser.id !== user.id);
-    } else {
-      selectedUsers = [...selectedUsers, user];
-    }
+    selectedUsers = selectedUsers.includes(user)
+      ? selectedUsers.filter((selectedUser) => selectedUser.id !== user.id)
+      : [...selectedUsers, user];
   };
 </script>
 
-<BaseModal on:close={() => dispatch('close')}>
-  <svelte:fragment slot="title">
-    <span class="flex place-items-center gap-2">
-      <ImmichLogo width={24} />
-      <p class="font-medium">Add partner</p>
-    </span>
-  </svelte:fragment>
-
+<FullScreenModal title={$t('add_partner')} showLogo {onClose}>
   <div class="immich-scrollbar max-h-[300px] overflow-y-auto">
     {#if availableUsers.length > 0}
       {#each availableUsers as user}
         <button
-          on:click={() => selectUser(user)}
-          class="flex w-full place-items-center gap-4 px-5 py-4 transition-all hover:bg-gray-200 dark:hover:bg-gray-700"
+          type="button"
+          onclick={() => selectUser(user)}
+          class="flex w-full place-items-center gap-4 px-5 py-4 transition-all hover:bg-gray-200 dark:hover:bg-gray-700 rounded-xl"
         >
           {#if selectedUsers.includes(user)}
             <span
@@ -70,15 +65,15 @@
         </button>
       {/each}
     {:else}
-      <p class="p-5 text-sm">
-        Looks like you shared your photos with all users or you don't have any user to share with.
+      <p class="py-5 text-sm">
+        {$t('photo_shared_all_users')}
       </p>
     {/if}
 
     {#if selectedUsers.length > 0}
-      <div class="flex place-content-end p-5">
-        <Button size="sm" rounded="lg" on:click={() => dispatch('add-users', selectedUsers)}>Add</Button>
+      <div class="pt-5">
+        <Button size="sm" fullwidth onclick={() => onAddUsers(selectedUsers)}>{$t('add')}</Button>
       </div>
     {/if}
   </div>
-</BaseModal>
+</FullScreenModal>

@@ -1,41 +1,37 @@
-version: "3.8"
+#
+# WARNING: To install Immich, follow our guide: https://immich.app/docs/install/docker-compose
+#
+# Make sure to use the docker-compose.yml of the current release:
+#
+# https://github.com/immich-app/immich/releases/latest/download/docker-compose.yml
+#
+# The compose file on main may not be compatible with the latest release.
 
 name: immich-prod
-
-x-server-build: &server-common
-  image: immich-server:latest
-  build:
-    context: ../
-    dockerfile: server/Dockerfile
-  volumes:
-    - ${UPLOAD_LOCATION}/photos:/usr/src/app/upload
-    - /etc/localtime:/etc/localtime:ro
-  env_file:
-    - .env
-  restart: always
 
 services:
   immich-server:
     container_name: immich_server
-    command: [ "./start-server.sh" ]
-    <<: *server-common
-    ports:
-      - 2283:3001
-    depends_on:
-      - redis
-      - database
-
-  immich-microservices:
-    container_name: immich_microservices
-    command: [ "./start-microservices.sh" ]
-    <<: *server-common
+    image: immich-server:latest
     # extends:
     #   file: hwaccel.transcoding.yml
     #   service: cpu # set to one of [nvenc, quicksync, rkmpp, vaapi, vaapi-wsl] for accelerated transcoding
+    build:
+      context: ../
+      dockerfile: server/Dockerfile
+    volumes:
+      - ${UPLOAD_LOCATION}/photos:/usr/src/app/upload
+      - /etc/localtime:/etc/localtime:ro
+    env_file:
+      - .env
+    ports:
+      - 2283:2283
     depends_on:
       - redis
       - database
-      - immich-server
+    restart: always
+    healthcheck:
+      disable: false
 
   immich-machine-learning:
     container_name: immich_machine_learning
@@ -48,29 +44,79 @@ services:
       dockerfile: Dockerfile
       args:
         - DEVICE=cpu # set to one of [armnn, cuda, openvino, openvino-wsl] for accelerated inference
+    ports:
+      - 3003:3003
     volumes:
       - model-cache:/cache
     env_file:
       - .env
     restart: always
+    healthcheck:
+      disable: false
 
   redis:
     container_name: immich_redis
-    image: redis:6.2-alpine@sha256:c5a607fb6e1bb15d32bbcf14db22787d19e428d59e31a5da67511b49bb0f1ccc
+    image: redis:6.2-alpine@sha256:148bb5411c184abd288d9aaed139c98123eeb8824c5d3fce03cf721db58066d8
+    healthcheck:
+      test: redis-cli ping || exit 1
     restart: always
 
   database:
     container_name: immich_postgres
-    image: tensorchord/pgvecto-rs:pg14-v0.1.11@sha256:0335a1a22f8c5dd1b697f14f079934f5152eaaa216c09b61e293be285491f8ee
+    image: tensorchord/pgvecto-rs:pg14-v0.2.0@sha256:90724186f0a3517cf6914295b5ab410db9ce23190a2d9d0b9dd6463e3fa298f0
     env_file:
       - .env
     environment:
       POSTGRES_PASSWORD: ${DB_PASSWORD}
       POSTGRES_USER: ${DB_USERNAME}
       POSTGRES_DB: ${DB_DATABASE_NAME}
+      POSTGRES_INITDB_ARGS: '--data-checksums'
     volumes:
       - ${UPLOAD_LOCATION}/postgres:/var/lib/postgresql/data
+    ports:
+      - 5432:5432
+    healthcheck:
+      test: >-
+        pg_isready --dbname="$${POSTGRES_DB}" --username="$${POSTGRES_USER}" || exit 1;
+        Chksum="$$(psql --dbname="$${POSTGRES_DB}" --username="$${POSTGRES_USER}" --tuples-only --no-align
+        --command='SELECT COALESCE(SUM(checksum_failures), 0) FROM pg_stat_database')";
+        echo "checksum failure count is $$Chksum";
+        [ "$$Chksum" = '0' ] || exit 1
+      interval: 5m
+      start_interval: 30s
+      start_period: 5m
+    command: >-
+      postgres
+      -c shared_preload_libraries=vectors.so
+      -c 'search_path="$$user", public, vectors'
+      -c logging_collector=on
+      -c max_wal_size=2GB
+      -c shared_buffers=512MB
+      -c wal_compression=on
     restart: always
+
+  # set IMMICH_TELEMETRY_INCLUDE=all in .env to enable metrics
+  immich-prometheus:
+    container_name: immich_prometheus
+    ports:
+      - 9090:9090
+    image: prom/prometheus@sha256:6559acbd5d770b15bb3c954629ce190ac3cbbdb2b7f1c30f0385c4e05104e218
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus-data:/prometheus
+
+  # first login uses admin/admin
+  # add data source for http://immich-prometheus:9090 to get started
+  immich-grafana:
+    container_name: immich_grafana
+    command: ['./run.sh', '-disable-reporting']
+    ports:
+      - 3000:3000
+    image: grafana/grafana:11.5.1-ubuntu@sha256:9a4ab78cec1a2ec7d1ca5dfd5aacec6412706a1bc9e971fc7184e2f6696a63f5
+    volumes:
+      - grafana-data:/var/lib/grafana
 
 volumes:
   model-cache:
+  prometheus-data:
+  grafana-data:

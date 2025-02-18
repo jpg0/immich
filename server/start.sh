@@ -1,35 +1,29 @@
-#!/usr/bin/env sh
+#!/usr/bin/env bash
 
-export LD_PRELOAD=/usr/lib/$(arch)-linux-gnu/libmimalloc.so.2
+echo "Initializing Immich $IMMICH_SOURCE_REF"
 
-if [ "$DB_URL_FILE" ]; then
-	export DB_URL=$(cat $DB_URL_FILE)
-	unset DB_URL_FILE
+lib_path="/usr/lib/$(arch)-linux-gnu/libmimalloc.so.2"
+export LD_PRELOAD="$lib_path"
+export LD_LIBRARY_PATH="$LD_LIBRARY_PATH:/usr/lib/jellyfin-ffmpeg/lib"
+
+read_file_and_export() {
+	if [ -n "${!1}" ]; then
+		content="$(cat "${!1}")"
+		export "$2"="${content}"
+		unset "$1"
+	fi
+}
+read_file_and_export "DB_URL_FILE" "DB_URL"
+read_file_and_export "DB_HOSTNAME_FILE" "DB_HOSTNAME"
+read_file_and_export "DB_DATABASE_NAME_FILE" "DB_DATABASE_NAME"
+read_file_and_export "DB_USERNAME_FILE" "DB_USERNAME"
+read_file_and_export "DB_PASSWORD_FILE" "DB_PASSWORD"
+read_file_and_export "REDIS_PASSWORD_FILE" "REDIS_PASSWORD"
+
+export CPU_CORES="${CPU_CORES:=$(./get-cpus.sh)}"
+echo "Detected CPU Cores: $CPU_CORES"
+if [ "$CPU_CORES" -gt 4 ]; then
+  export UV_THREADPOOL_SIZE=$CPU_CORES
 fi
 
-if [ "$DB_HOSTNAME_FILE" ]; then
-	export DB_HOSTNAME=$(cat $DB_HOSTNAME_FILE)
-	unset DB_HOSTNAME_FILE
-fi
-
-if [ "$DB_DATABASE_NAME_FILE" ]; then
-	export DB_DATABASE_NAME=$(cat $DB_DATABASE_NAME_FILE)
-	unset DB_DATABASE_NAME_FILE
-fi
-
-if [ "$DB_USERNAME_FILE" ]; then
-	export DB_USERNAME=$(cat $DB_USERNAME_FILE)
-	unset DB_USERNAME_FILE
-fi
-
-if [ "$DB_PASSWORD_FILE" ]; then
-	export DB_PASSWORD=$(cat $DB_PASSWORD_FILE)
-	unset DB_PASSWORD_FILE
-fi
-
-if [ "$REDIS_PASSWORD_FILE" ]; then
-	export REDIS_PASSWORD=$(cat $REDIS_PASSWORD_FILE)
-	unset REDIS_PASSWORD_FILE
-fi
-
-exec node /usr/src/app/dist/main $@
+exec node /usr/src/app/dist/main "$@"

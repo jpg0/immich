@@ -1,26 +1,40 @@
 <script lang="ts">
   import CircleIconButton from '$lib/components/elements/buttons/circle-icon-button.svelte';
-  import { type SharedLinkResponseDto, api } from '@api';
-  import ConfirmDialogue from '../../shared-components/confirm-dialogue.svelte';
-  import { getAssetControlContext } from '../asset-select-control-bar.svelte';
-  import { NotificationType, notificationController } from '../../shared-components/notification/notification';
-  import { handleError } from '../../../utils/handle-error';
+  import { getKey } from '$lib/utils';
+  import { handleError } from '$lib/utils/handle-error';
+  import { removeSharedLinkAssets, type SharedLinkResponseDto } from '@immich/sdk';
   import { mdiDeleteOutline } from '@mdi/js';
+  import { NotificationType, notificationController } from '../../shared-components/notification/notification';
+  import { getAssetControlContext } from '../asset-select-control-bar.svelte';
+  import { dialogController } from '$lib/components/shared-components/dialog/dialog';
+  import { t } from 'svelte-i18n';
 
-  export let sharedLink: SharedLinkResponseDto;
+  interface Props {
+    sharedLink: SharedLinkResponseDto;
+  }
 
-  let removing = false;
+  let { sharedLink = $bindable() }: Props = $props();
 
   const { getAssets, clearSelect } = getAssetControlContext();
 
   const handleRemove = async () => {
+    const isConfirmed = await dialogController.show({
+      title: $t('remove_assets_title'),
+      prompt: $t('remove_assets_shared_link_confirmation', { values: { count: getAssets().size } }),
+      confirmText: $t('remove'),
+    });
+
+    if (!isConfirmed) {
+      return;
+    }
+
     try {
-      const { data: results } = await api.sharedLinkApi.removeSharedLinkAssets({
+      const results = await removeSharedLinkAssets({
         id: sharedLink.id,
         assetIdsDto: {
-          assetIds: Array.from(getAssets()).map((asset) => asset.id),
+          assetIds: [...getAssets()].map((asset) => asset.id),
         },
-        key: api.getKey(),
+        key: getKey(),
       });
 
       for (const result of results) {
@@ -35,24 +49,14 @@
 
       notificationController.show({
         type: NotificationType.Info,
-        message: `Removed ${count} assets`,
+        message: $t('assets_removed_count', { values: { count } }),
       });
 
       clearSelect();
     } catch (error) {
-      handleError(error, 'Unable to remove assets from shared link');
+      handleError(error, $t('errors.unable_to_remove_assets_from_shared_link'));
     }
   };
 </script>
 
-<CircleIconButton title="Remove from shared link" on:click={() => (removing = true)} icon={mdiDeleteOutline} />
-
-{#if removing}
-  <ConfirmDialogue
-    title="Remove Assets?"
-    prompt="Are you sure you want to remove {getAssets().size} asset(s) from this shared link?"
-    confirmText="Remove"
-    on:confirm={() => handleRemove()}
-    on:cancel={() => (removing = false)}
-  />
-{/if}
+<CircleIconButton title={$t('remove_from_shared_link')} onclick={handleRemove} icon={mdiDeleteOutline} />

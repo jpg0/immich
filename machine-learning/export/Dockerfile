@@ -1,7 +1,6 @@
-FROM mambaorg/micromamba:bookworm-slim@sha256:377aafafb5f58e577faeb8b2884b795c6ff0a92e4a53ef814ea3961286ceae18 as builder
+FROM mambaorg/micromamba:bookworm-slim@sha256:e3797091302382ea841498bc93a7b0a50f7c1448333d5e946d2d1608d0c5f43d AS builder
 
-ENV NODE_ENV=production \
-  TRANSFORMERS_CACHE=/cache \
+ENV TRANSFORMERS_CACHE=/cache \
   PYTHONDONTWRITEBYTECODE=1 \
   PYTHONUNBUFFERED=1 \
   PATH="/opt/venv/bin:$PATH" \

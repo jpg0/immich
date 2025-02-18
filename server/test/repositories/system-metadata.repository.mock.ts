@@ -1,8 +1,14 @@
-import { ISystemMetadataRepository } from '@app/domain';
+import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository';
+import { RepositoryInterface } from 'src/types';
+import { clearConfigCache } from 'src/utils/config';
+import { Mocked, vitest } from 'vitest';
 
-export const newSystemMetadataRepositoryMock = (): jest.Mocked<ISystemMetadataRepository> => {
+export const newSystemMetadataRepositoryMock = (): Mocked<RepositoryInterface<SystemMetadataRepository>> => {
+  clearConfigCache();
   return {
-    get: jest.fn(),
-    set: jest.fn(),
+    get: vitest.fn() as any,
+    set: vitest.fn(),
+    delete: vitest.fn(),
+    readFile: vitest.fn(),
   };
 };
