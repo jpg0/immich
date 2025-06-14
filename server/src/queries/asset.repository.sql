@@ -185,16 +185,6 @@ set
 where
   "id" = any ($2::uuid[])
 
--- AssetRepository.updateDuplicates
-update "assets"
-set
-  "duplicateId" = $1
-where
-  (
-    "duplicateId" = any ($2::uuid[])
-    or "id" = any ($3::uuid[])
-  )
-
 -- AssetRepository.getByChecksum
 select
   "assets".*
@@ -242,7 +232,7 @@ with
       and "assets"."visibility" in ('archive', 'timeline')
   )
 select
-  "timeBucket",
+  "timeBucket"::date::text as "timeBucket",
   count(*) as "count"
 from
   "assets"
@@ -262,9 +252,16 @@ with
       assets.type = 'IMAGE' as "isImage",
       assets."deletedAt" is not null as "isTrashed",
       "assets"."livePhotoVideoId",
-      "assets"."localDateTime",
+      extract(
+        epoch
+        from
+          (
+            assets."localDateTime" - assets."fileCreatedAt" at time zone 'UTC'
+          )
+      )::real / 3600 as "localOffsetHours",
       "assets"."ownerId",
       "assets"."status",
+      assets."fileCreatedAt" at time zone 'utc' as "fileCreatedAt",
       encode("assets"."thumbhash", 'base64') as "thumbhash",
       "exif"."city",
       "exif"."country",
@@ -313,7 +310,7 @@ with
           and "asset_stack"."primaryAssetId" != "assets"."id"
       )
     order by
-      "assets"."localDateTime" desc
+      "assets"."fileCreatedAt" desc
   ),
   "agg" as (
     select
@@ -326,7 +323,8 @@ with
       coalesce(array_agg("isImage"), '{}') as "isImage",
       coalesce(array_agg("isTrashed"), '{}') as "isTrashed",
       coalesce(array_agg("livePhotoVideoId"), '{}') as "livePhotoVideoId",
-      coalesce(array_agg("localDateTime"), '{}') as "localDateTime",
+      coalesce(array_agg("fileCreatedAt"), '{}') as "fileCreatedAt",
+      coalesce(array_agg("localOffsetHours"), '{}') as "localOffsetHours",
       coalesce(array_agg("ownerId"), '{}') as "ownerId",
       coalesce(array_agg("projectionType"), '{}') as "projectionType",
       coalesce(array_agg("ratio"), '{}') as "ratio",
@@ -340,66 +338,6 @@ select
   to_json(agg)::text as "assets"
 from
   "agg"
-
--- AssetRepository.getDuplicates
-with
-  "duplicates" as (
-    select
-      "assets"."duplicateId",
-      json_agg(
-        "asset"
-        order by
-          "assets"."localDateTime" asc
-      ) as "assets"
-    from
-      "assets"
-      left join lateral (
-        select
-          "assets".*,
-          "exif" as "exifInfo"
-        from
-          "exif"
-        where
-          "exif"."assetId" = "assets"."id"
-      ) as "asset" on true
-    where
-      "assets"."visibility" in ('archive', 'timeline')
-      and "assets"."ownerId" = $1::uuid
-      and "assets"."duplicateId" is not null
-      and "assets"."deletedAt" is null
-      and "assets"."stackId" is null
-    group by
-      "assets"."duplicateId"
-  ),
-  "unique" as (
-    select
-      "duplicateId"
-    from
-      "duplicates"
-    where
-      json_array_length("assets") = $2
-  ),
-  "removed_unique" as (
-    update "assets"
-    set
-      "duplicateId" = $3
-    from
-      "unique"
-    where
-      "assets"."duplicateId" = "unique"."duplicateId"
-  )
-select
-  *
-from
-  "duplicates"
-where
-  not exists (
-    select
-    from
-      "unique"
-    where
-      "unique"."duplicateId" = "duplicates"."duplicateId"
-  )
 
 -- AssetRepository.getAssetIdByCity
 with
