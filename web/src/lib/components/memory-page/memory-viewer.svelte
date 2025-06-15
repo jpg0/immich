@@ -23,19 +23,18 @@
     notificationController,
     NotificationType,
   } from '$lib/components/shared-components/notification/notification';
-  import { AppRoute, QueryParameter } from '$lib/constants';
+  import { AppRoute, assetViewerFadeDuration, QueryParameter } from '$lib/constants';
   import { authManager } from '$lib/managers/auth-manager.svelte';
+  import type { TimelineAsset, Viewport } from '$lib/managers/timeline-manager/types';
   import { AssetInteraction } from '$lib/stores/asset-interaction.svelte';
   import { assetViewingStore } from '$lib/stores/asset-viewing.store';
-  import type { TimelineAsset } from '$lib/managers/timeline-manager/types';
-  import type { Viewport } from '$lib/managers/timeline-manager/types';
   import { type MemoryAsset, memoryStore } from '$lib/stores/memory.store.svelte';
   import { locale, videoViewerMuted, videoViewerVolume } from '$lib/stores/preferences.store';
   import { preferences } from '$lib/stores/user.store';
   import { getAssetPlaybackUrl, getAssetThumbnailUrl, handlePromiseError, memoryLaneTitle } from '$lib/utils';
   import { cancelMultiselect } from '$lib/utils/asset-utils';
   import { getAltText } from '$lib/utils/thumbnail-util';
-  import { fromLocalDateTime, toTimelineAsset } from '$lib/utils/timeline-util';
+  import { fromISODateTimeUTC, toTimelineAsset } from '$lib/utils/timeline-util';
   import { AssetMediaSize, getAssetInfo } from '@immich/sdk';
   import { IconButton } from '@immich/ui';
   import {
@@ -261,12 +260,7 @@
     playerInitialized = true;
   };
 
-  afterNavigate(({ from, to, type }) => {
-    if (type === 'enter') {
-      // afterNavigate triggers twice on first page load (once when mounted with 'enter' and then a second time
-      // with the actual 'goto' to URL).
-      return;
-    }
+  afterNavigate(({ from, to }) => {
     memoryStore.initialize().then(
       () => {
         let target = null;
@@ -469,7 +463,7 @@
         >
           <div class="relative h-full w-full rounded-2xl bg-black">
             {#key current.asset.id}
-              <div transition:fade class="h-full w-full">
+              <div transition:fade={{ duration: assetViewerFadeDuration }} class="h-full w-full">
                 {#if current.asset.isVideo}
                   <video
                     bind:this={videoPlayer}
@@ -576,7 +570,7 @@
 
             <div class="absolute start-8 top-4 text-sm font-medium text-white">
               <p>
-                {fromLocalDateTime(current.memory.assets[0].localDateTime).toLocaleString(DateTime.DATE_FULL, {
+                {fromISODateTimeUTC(current.memory.assets[0].localDateTime).toLocaleString(DateTime.DATE_FULL, {
                   locale: $locale,
                 })}
               </p>
