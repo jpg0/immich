@@ -5,9 +5,14 @@ import { DateTime } from 'luxon';
 import { InjectKysely } from 'nestjs-kysely';
 import { Chunked, ChunkedSet, DummyValue, GenerateSql } from 'src/decorators';
 import { MemorySearchDto } from 'src/dtos/memory.dto';
+// MapAsset is not needed if we revert to the simpler getRandom
+// import { MapAsset } from 'src/dtos/asset-response.dto';
 import { AssetVisibility } from 'src/enum';
 import { DB } from 'src/schema';
 import { MemoryTable } from 'src/schema/tables/memory.table';
+
+// MemoryAssetRow is not needed if we revert to the simpler getRandom
+// type MemoryAssetRow = MapAsset;
 import { IBulkAsset } from 'src/types';
 
 @Injectable()
@@ -73,6 +78,30 @@ export class MemoryRepository implements IBulkAsset {
       )
       .selectAll('memories')
       .orderBy('memoryAt', 'desc')
+      .execute();
+  }
+
+  @GenerateSql(
+    { params: [DummyValue.UUID, {}] },
+    { name: 'date filter', params: [DummyValue.UUID, { for: DummyValue.DATE }] },
+  )
+  getRandom(ownerId: string, dto: MemorySearchDto, size = 20) {
+    return this.searchBuilder(ownerId, dto)
+      .select((eb) =>
+        jsonArrayFrom(
+          eb
+            .selectFrom('assets')
+            .selectAll('assets')
+            .innerJoin('memories_assets_assets', 'assets.id', 'memories_assets_assets.assetsId')
+            .whereRef('memories_assets_assets.memoriesId', '=', 'memories.id')
+            .orderBy('assets.fileCreatedAt', 'asc')
+            .where('assets.visibility', '=', sql.lit(AssetVisibility.TIMELINE))
+            .where('assets.deletedAt', 'is', null),
+        ).as('assets'),
+      )
+      .selectAll('memories')
+      .orderBy(sql`RANDOM()`)
+      .limit(size)
       .execute();
   }
 

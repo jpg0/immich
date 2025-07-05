@@ -1,8 +1,9 @@
 import { Kysely } from 'kysely';
 import { DateTime } from 'luxon';
-import { AssetFileType, MemoryType } from 'src/enum';
+import { AssetFileType, MemoryType, Permission } from 'src/enum';
 import { AccessRepository } from 'src/repositories/access.repository';
 import { AssetRepository } from 'src/repositories/asset.repository';
+// import { RandomMemoriesSearchDto } from 'src/dtos/memory.dto'; // Removed as tests are removed
 import { DatabaseRepository } from 'src/repositories/database.repository';
 import { LoggingRepository } from 'src/repositories/logging.repository';
 import { MemoryRepository } from 'src/repositories/memory.repository';
@@ -11,11 +12,13 @@ import { SystemMetadataRepository } from 'src/repositories/system-metadata.repos
 import { UserRepository } from 'src/repositories/user.repository';
 import { DB } from 'src/schema';
 import { MemoryService } from 'src/services/memory.service';
-import { newMediumService } from 'test/medium.factory';
+import { MemoryResponseDto } from 'src/dtos/memory.dto';
+import { newMediumService, newTestApp } from 'test/medium.factory';
 import { factory } from 'test/small.factory';
-import { getKyselyDB } from 'test/utils';
+import { getKyselyDB, TestApp } from 'test/utils';
 
 let defaultDatabase: Kysely<DB>;
+let app: TestApp;
 
 const setup = (db?: Kysely<DB>) => {
   return newMediumService(MemoryService, {
@@ -37,6 +40,11 @@ const setup = (db?: Kysely<DB>) => {
 describe(MemoryService.name, () => {
   beforeEach(async () => {
     defaultDatabase = await getKyselyDB();
+    app = await newTestApp({ db: defaultDatabase });
+  });
+
+  afterEach(async () => {
+    await app?.close();
   });
 
   describe('create', () => {
@@ -201,6 +209,67 @@ describe(MemoryService.name, () => {
     it('should run without error', async () => {
       const { sut } = setup();
       await expect(sut.onMemoriesCleanup()).resolves.not.toThrow();
+    });
+  });
+
+  describe('GET /memories/random', () => {
+    it('should return a random set of memories', async () => {
+      const { ctx } = setup();
+      const { user, accessToken } = await ctx.newUser({ withPermission: [Permission.MEMORY_READ] });
+
+      // Create some memories
+      for (let i = 0; i < 5; i++) {
+        await ctx.newMemory({ ownerId: user.id, data: { year: 2020 + i } });
+      }
+
+      const { status, body } = await app.request
+        .get('/memories/random?size=3')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send();
+
+      expect(status).toBe(200);
+      expect(body).toBeInstanceOf(Array);
+      expect(body.length).toBe(3);
+      body.forEach((memory: MemoryResponseDto) => {
+        expect(memory.id).toEqual(expect.any(String));
+        expect(memory.ownerId).toBe(user.id);
+      });
+    });
+
+    it('should return default number of memories if size is not specified', async () => {
+      const { ctx } = setup();
+      const { user, accessToken } = await ctx.newUser({ withPermission: [Permission.MEMORY_READ] });
+
+      for (let i = 0; i < 25; i++) {
+        await ctx.newMemory({ ownerId: user.id, data: { year: 2000 + i } });
+      }
+
+      const { status, body } = await app.request
+        .get('/memories/random')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send();
+
+      expect(status).toBe(200);
+      expect(body).toBeInstanceOf(Array);
+      expect(body.length).toBe(20); // Default size
+    });
+
+    it('should return empty array if no memories found', async () => {
+      const { ctx } = setup();
+      const { accessToken } = await ctx.newUser({ withPermission: [Permission.MEMORY_READ] });
+
+      const { status, body } = await app.request
+        .get('/memories/random?size=5')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send();
+
+      expect(status).toBe(200);
+      expect(body).toEqual([]);
+    });
+
+    it('should return 401 for unauthenticated user', async () => {
+      const { status } = await app.request.get('/memories/random').send();
+      expect(status).toBe(401);
     });
   });
 });
