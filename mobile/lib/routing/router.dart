@@ -1,6 +1,9 @@
 import 'package:auto_route/auto_route.dart';
 import 'package:flutter/material.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
+import 'package:immich_mobile/domain/models/album/album.model.dart';
+import 'package:immich_mobile/domain/models/album/local_album.model.dart';
+import 'package:immich_mobile/domain/models/asset/base_asset.model.dart';
 import 'package:immich_mobile/domain/models/log.model.dart';
 import 'package:immich_mobile/domain/models/memory.model.dart';
 import 'package:immich_mobile/domain/models/user.model.dart';
@@ -66,15 +69,23 @@ import 'package:immich_mobile/pages/search/person_result.page.dart';
 import 'package:immich_mobile/pages/search/recently_taken.page.dart';
 import 'package:immich_mobile/pages/search/search.page.dart';
 import 'package:immich_mobile/pages/share_intent/share_intent.page.dart';
-import 'package:immich_mobile/presentation/pages/dev/drift_trash.page.dart';
-import 'package:immich_mobile/presentation/pages/dev/drift_archive.page.dart';
-import 'package:immich_mobile/presentation/pages/dev/drift_locked_folder.page.dart';
+import 'package:immich_mobile/presentation/pages/drift_favorite.page.dart';
+import 'package:immich_mobile/presentation/pages/drift_partner_detail.page.dart';
+import 'package:immich_mobile/presentation/pages/drift_local_album.page.dart';
+import 'package:immich_mobile/presentation/pages/drift_recently_taken.page.dart';
+import 'package:immich_mobile/presentation/pages/drift_video.page.dart';
+import 'package:immich_mobile/presentation/pages/drift_trash.page.dart';
+import 'package:immich_mobile/presentation/pages/drift_archive.page.dart';
+import 'package:immich_mobile/presentation/pages/drift_locked_folder.page.dart';
 import 'package:immich_mobile/presentation/pages/dev/feat_in_development.page.dart';
-import 'package:immich_mobile/presentation/pages/dev/local_timeline.page.dart';
+import 'package:immich_mobile/presentation/pages/local_timeline.page.dart';
 import 'package:immich_mobile/presentation/pages/dev/main_timeline.page.dart';
 import 'package:immich_mobile/presentation/pages/dev/media_stat.page.dart';
-import 'package:immich_mobile/presentation/pages/dev/remote_timeline.page.dart';
+import 'package:immich_mobile/presentation/pages/drift_remote_album.page.dart';
 import 'package:immich_mobile/presentation/pages/drift_album.page.dart';
+import 'package:immich_mobile/presentation/pages/drift_library.page.dart';
+import 'package:immich_mobile/presentation/pages/drift_asset_selection_timeline.page.dart';
+import 'package:immich_mobile/presentation/pages/drift_create_album.page.dart';
 import 'package:immich_mobile/presentation/pages/drift_memory.page.dart';
 import 'package:immich_mobile/presentation/widgets/asset_viewer/asset_viewer.page.dart';
 import 'package:immich_mobile/providers/api.provider.dart';
@@ -83,6 +94,7 @@ import 'package:immich_mobile/routing/auth_guard.dart';
 import 'package:immich_mobile/routing/backup_permission_guard.dart';
 import 'package:immich_mobile/routing/custom_transition_builders.dart';
 import 'package:immich_mobile/routing/duplicate_guard.dart';
+import 'package:immich_mobile/routing/gallery_guard.dart';
 import 'package:immich_mobile/routing/locked_guard.dart';
 import 'package:immich_mobile/services/api.service.dart';
 import 'package:immich_mobile/services/local_auth.service.dart';
@@ -108,6 +120,7 @@ class AppRouter extends RootStackRouter {
   late final DuplicateGuard _duplicateGuard;
   late final BackupPermissionGuard _backupPermissionGuard;
   late final LockedGuard _lockedGuard;
+  late final GalleryGuard _galleryGuard;
 
   AppRouter(
     ApiService apiService,
@@ -120,6 +133,7 @@ class AppRouter extends RootStackRouter {
     _lockedGuard =
         LockedGuard(apiService, secureStorageService, localAuthService);
     _backupPermissionGuard = BackupPermissionGuard(galleryPermissionNotifier);
+    _galleryGuard = const GalleryGuard();
   }
 
   @override
@@ -177,7 +191,7 @@ class AppRouter extends RootStackRouter {
           maintainState: false,
         ),
         AutoRoute(
-          page: LibraryRoute.page,
+          page: DriftLibraryRoute.page,
           guards: [_authGuard, _duplicateGuard],
         ),
         AutoRoute(
@@ -189,7 +203,7 @@ class AppRouter extends RootStackRouter {
     ),
     CustomRoute(
       page: GalleryViewerRoute.page,
-      guards: [_authGuard, _duplicateGuard],
+      guards: [_authGuard, _galleryGuard],
       transitionsBuilder: CustomTransitionsBuilders.zoomedPage,
     ),
     AutoRoute(
@@ -376,7 +390,7 @@ class AppRouter extends RootStackRouter {
       guards: [_authGuard, _duplicateGuard],
     ),
     AutoRoute(
-      page: RemoteTimelineRoute.page,
+      page: RemoteAlbumRoute.page,
       guards: [_authGuard, _duplicateGuard],
     ),
     AutoRoute(
@@ -396,6 +410,10 @@ class AppRouter extends RootStackRouter {
       guards: [_authGuard, _duplicateGuard],
     ),
     AutoRoute(
+      page: DriftFavoriteRoute.page,
+      guards: [_authGuard, _duplicateGuard],
+    ),
+    AutoRoute(
       page: DriftTrashRoute.page,
       guards: [_authGuard, _duplicateGuard],
     ),
@@ -407,6 +425,35 @@ class AppRouter extends RootStackRouter {
       page: DriftLockedFolderRoute.page,
       guards: [_authGuard, _duplicateGuard],
     ),
+    AutoRoute(
+      page: DriftVideoRoute.page,
+      guards: [_authGuard, _duplicateGuard],
+    ),
+    AutoRoute(
+      page: DriftLibraryRoute.page,
+      guards: [_authGuard, _duplicateGuard],
+    ),
+    AutoRoute(
+      page: DriftAssetSelectionTimelineRoute.page,
+      guards: [_authGuard, _duplicateGuard],
+    ),
+    AutoRoute(
+      page: DriftPartnerDetailRoute.page,
+      guards: [_authGuard, _duplicateGuard],
+    ),
+    AutoRoute(
+      page: DriftRecentlyTakenRoute.page,
+      guards: [_authGuard, _duplicateGuard],
+    ),
+    AutoRoute(
+      page: DriftLocalAlbumsRoute.page,
+      guards: [_authGuard, _duplicateGuard],
+    ),
+    AutoRoute(
+      page: DriftCreateAlbumRoute.page,
+      guards: [_authGuard, _duplicateGuard],
+    ),
+
     // required to handle all deeplinks in deep_link.service.dart
     // auto_route_library#1722
     RedirectRoute(path: '*', redirectTo: '/'),

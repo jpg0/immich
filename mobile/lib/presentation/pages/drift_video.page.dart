@@ -6,8 +6,8 @@ import 'package:immich_mobile/providers/infrastructure/timeline.provider.dart';
 import 'package:immich_mobile/providers/user.provider.dart';
 
 @RoutePage()
-class DriftArchivePage extends StatelessWidget {
-  const DriftArchivePage({super.key});
+class DriftVideoPage extends StatelessWidget {
+  const DriftVideoPage({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -17,11 +17,11 @@ class DriftArchivePage extends StatelessWidget {
           (ref) {
             final user = ref.watch(currentUserProvider);
             if (user == null) {
-              throw Exception('User must be logged in to access archive');
+              throw Exception('User must be logged in to video');
             }
 
             final timelineService =
-                ref.watch(timelineFactoryProvider).archive(user.id);
+                ref.watch(timelineFactoryProvider).video(user.id);
             ref.onDispose(timelineService.dispose);
             return timelineService;
           },

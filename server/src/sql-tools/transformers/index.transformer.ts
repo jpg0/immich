@@ -1,15 +1,19 @@
 import { asColumnList } from 'src/sql-tools/helpers';
 import { SqlTransformer } from 'src/sql-tools/transformers/types';
-import { DatabaseIndex, SchemaDiff } from 'src/sql-tools/types';
+import { DatabaseIndex } from 'src/sql-tools/types';
 
-export const transformIndexes: SqlTransformer = (item: SchemaDiff) => {
+export const transformIndexes: SqlTransformer = (ctx, item) => {
   switch (item.type) {
     case 'IndexCreate': {
       return asIndexCreate(item.index);
     }
 
+    case 'IndexRename': {
+      return `ALTER INDEX "${item.oldName}" RENAME TO "${item.newName}";`;
+    }
+
     case 'IndexDrop': {
-      return asIndexDrop(item.indexName);
+      return `DROP INDEX "${item.indexName}";`;
     }
 
     default: {
@@ -48,9 +52,5 @@ export const asIndexCreate = (index: DatabaseIndex): string => {
     sql += ` WHERE ${index.where}`;
   }
 
-  return sql;
-};
-
-export const asIndexDrop = (indexName: string): string => {
-  return `DROP INDEX "${indexName}";`;
+  return sql + ';';
 };

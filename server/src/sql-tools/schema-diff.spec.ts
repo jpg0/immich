@@ -21,12 +21,14 @@ const fromColumn = (column: Partial<Omit<DatabaseColumn, 'tableName'>>): Databas
     enums: [],
     extensions: [],
     parameters: [],
+    overrides: [],
     tables: [
       {
         name: tableName,
         columns: [
           {
             name: 'column1',
+            primary: false,
             synchronize: true,
             isArray: false,
             type: 'character varying',
@@ -55,12 +57,14 @@ const fromConstraint = (constraint?: DatabaseConstraint): DatabaseSchema => {
     enums: [],
     extensions: [],
     parameters: [],
+    overrides: [],
     tables: [
       {
         name: tableName,
         columns: [
           {
             name: 'column1',
+            primary: false,
             synchronize: true,
             isArray: false,
             type: 'character varying',
@@ -88,12 +92,14 @@ const fromIndex = (index?: DatabaseIndex): DatabaseSchema => {
     enums: [],
     extensions: [],
     parameters: [],
+    overrides: [],
     tables: [
       {
         name: tableName,
         columns: [
           {
             name: 'column1',
+            primary: false,
             synchronize: true,
             isArray: false,
             type: 'character varying',
@@ -137,6 +143,7 @@ const newSchema = (schema: {
       columns.push({
         tableName,
         name: columnName,
+        primary: false,
         type: column.type || 'character varying',
         isArray: column.isArray ?? false,
         nullable: column.nullable ?? false,
@@ -161,6 +168,7 @@ const newSchema = (schema: {
     enums: [],
     extensions: [],
     parameters: [],
+    overrides: [],
     tables,
     warnings: [],
   };
@@ -178,6 +186,7 @@ describe(schemaDiff.name, () => {
         const column: DatabaseColumn = {
           type: 'character varying',
           tableName: 'table1',
+          primary: false,
           name: 'column1',
           isArray: false,
           nullable: false,
@@ -260,6 +269,7 @@ describe(schemaDiff.name, () => {
             column: {
               tableName: 'table1',
               isArray: false,
+              primary: false,
               name: 'column2',
               nullable: false,
               type: 'character varying',

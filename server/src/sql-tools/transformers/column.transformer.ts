@@ -1,8 +1,8 @@
 import { asColumnComment, getColumnModifiers, getColumnType } from 'src/sql-tools/helpers';
 import { SqlTransformer } from 'src/sql-tools/transformers/types';
-import { ColumnChanges, DatabaseColumn, SchemaDiff } from 'src/sql-tools/types';
+import { ColumnChanges, DatabaseColumn } from 'src/sql-tools/types';
 
-export const transformColumns: SqlTransformer = (item: SchemaDiff) => {
+export const transformColumns: SqlTransformer = (ctx, item) => {
   switch (item.type) {
     case 'ColumnAdd': {
       return asColumnAdd(item.column);
@@ -12,8 +12,12 @@ export const transformColumns: SqlTransformer = (item: SchemaDiff) => {
       return asColumnAlter(item.tableName, item.columnName, item.changes);
     }
 
+    case 'ColumnRename': {
+      return `ALTER TABLE "${item.tableName}" RENAME COLUMN "${item.oldName}" TO "${item.newName}";`;
+    }
+
     case 'ColumnDrop': {
-      return asColumnDrop(item.tableName, item.columnName);
+      return `ALTER TABLE "${item.tableName}" DROP COLUMN "${item.columnName}";`;
     }
 
     default: {
@@ -26,10 +30,6 @@ const asColumnAdd = (column: DatabaseColumn): string => {
   return (
     `ALTER TABLE "${column.tableName}" ADD "${column.name}" ${getColumnType(column)}` + getColumnModifiers(column) + ';'
   );
-};
-
-const asColumnDrop = (tableName: string, columnName: string): string => {
-  return `ALTER TABLE "${tableName}" DROP COLUMN "${columnName}";`;
 };
 
 export const asColumnAlter = (tableName: string, columnName: string, changes: ColumnChanges): string[] => {

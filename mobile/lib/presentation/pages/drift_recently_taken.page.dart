@@ -3,12 +3,11 @@ import 'package:flutter/widgets.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:immich_mobile/presentation/widgets/timeline/timeline.widget.dart';
 import 'package:immich_mobile/providers/infrastructure/timeline.provider.dart';
+import 'package:immich_mobile/providers/user.provider.dart';
 
 @RoutePage()
-class RemoteTimelinePage extends StatelessWidget {
-  final String albumId;
-
-  const RemoteTimelinePage({super.key, required this.albumId});
+class DriftRecentlyTakenPage extends StatelessWidget {
+  const DriftRecentlyTakenPage({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -16,9 +15,15 @@ class RemoteTimelinePage extends StatelessWidget {
       overrides: [
         timelineServiceProvider.overrideWith(
           (ref) {
-            final timelineService = ref
-                .watch(timelineFactoryProvider)
-                .remoteAlbum(albumId: albumId);
+            final user = ref.watch(currentUserProvider);
+            if (user == null) {
+              throw Exception(
+                'User must be logged in to access recently taken',
+              );
+            }
+
+            final timelineService =
+                ref.watch(timelineFactoryProvider).remoteAssets(user.id);
             ref.onDispose(timelineService.dispose);
             return timelineService;
           },

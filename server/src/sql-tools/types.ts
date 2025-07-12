@@ -1,38 +1,51 @@
 import { Kysely, ColumnType as KyselyColumnType } from 'kysely';
+import { ProcessorContext } from 'src/sql-tools/contexts/processor-context';
+import { ReaderContext } from 'src/sql-tools/contexts/reader-context';
+import { NamingInterface } from 'src/sql-tools/naming/naming.interface';
 import { RegisterItem } from 'src/sql-tools/register-item';
-import { SchemaBuilder } from 'src/sql-tools/schema-builder';
 
-export type SchemaFromCodeOptions = {
-  /** automatically create indexes on foreign key columns */
-  createForeignKeyIndexes?: boolean;
+export type BaseContextOptions = {
   databaseName?: string;
   schemaName?: string;
+  overrideTableName?: string;
+  namingStrategy?: 'default' | 'hash' | NamingInterface;
+};
+
+export type SchemaFromCodeOptions = BaseContextOptions & {
+  /** automatically create indexes on foreign key columns */
+  createForeignKeyIndexes?: boolean;
   reset?: boolean;
+
+  functions?: boolean;
+  extensions?: boolean;
+  parameters?: boolean;
+  overrides?: boolean;
 };
 
-export type SchemaFromDatabaseOptions = {
-  schemaName?: string;
-};
+export type SchemaFromDatabaseOptions = BaseContextOptions;
 
-export type SchemaDiffToSqlOptions = {
+export type SchemaDiffToSqlOptions = BaseContextOptions & {
   comments?: boolean;
 };
 
-export type SchemaDiffOptions = {
+export type SchemaDiffOptions = BaseContextOptions & {
   tables?: IgnoreOptions;
   functions?: IgnoreOptions;
   enums?: IgnoreOptions;
-  extension?: IgnoreOptions;
+  extensions?: IgnoreOptions;
   parameters?: IgnoreOptions;
+  overrides?: IgnoreOptions;
 };
 
-export type IgnoreOptions = {
-  ignoreExtra?: boolean;
-  ignoreMissing?: boolean;
-};
+export type IgnoreOptions =
+  | boolean
+  | {
+      ignoreExtra?: boolean;
+      ignoreMissing?: boolean;
+    };
 
-export type Processor = (builder: SchemaBuilder, items: RegisterItem[], options: SchemaFromCodeOptions) => void;
-export type DatabaseReader = (schema: DatabaseSchema, db: DatabaseClient) => Promise<void>;
+export type Processor = (ctx: ProcessorContext, items: RegisterItem[]) => void;
+export type Reader = (ctx: ReaderContext, db: DatabaseClient) => Promise<void>;
 
 export type PostgresDB = {
   pg_am: {
@@ -319,6 +332,7 @@ export type DatabaseSchema = {
   tables: DatabaseTable[];
   extensions: DatabaseExtension[];
   parameters: DatabaseParameter[];
+  overrides: DatabaseOverride[];
   warnings: string[];
 };
 
@@ -332,6 +346,14 @@ export type DatabaseParameter = {
 
 export type ParameterScope = 'database' | 'user';
 
+export type DatabaseOverride = {
+  name: string;
+  value: { name: string; type: OverrideType; sql: string };
+  synchronize: boolean;
+};
+
+export type OverrideType = 'function' | 'index' | 'trigger';
+
 export type DatabaseEnum = {
   name: string;
   values: string[];
@@ -342,6 +364,7 @@ export type DatabaseFunction = {
   name: string;
   expression: string;
   synchronize: boolean;
+  override?: DatabaseOverride;
 };
 
 export type DatabaseExtension = {
@@ -365,7 +388,7 @@ export type DatabaseConstraint =
   | DatabaseCheckConstraint;
 
 export type DatabaseColumn = {
-  primary?: boolean;
+  primary: boolean;
   name: string;
   tableName: string;
   comment?: string;
@@ -438,6 +461,7 @@ export type DatabaseTrigger = {
   referencingOldTableAs?: string;
   when?: string;
   functionName: string;
+  override?: DatabaseOverride;
   synchronize: boolean;
 };
 export type TriggerTiming = 'before' | 'after' | 'instead of';
@@ -453,6 +477,7 @@ export type DatabaseIndex = {
   using?: string;
   with?: string;
   where?: string;
+  override?: DatabaseOverride;
   synchronize: boolean;
 };
 
@@ -464,11 +489,14 @@ export type SchemaDiff = { reason: string } & (
   | { type: 'TableCreate'; table: DatabaseTable }
   | { type: 'TableDrop'; tableName: string }
   | { type: 'ColumnAdd'; column: DatabaseColumn }
+  | { type: 'ColumnRename'; tableName: string; oldName: string; newName: string }
   | { type: 'ColumnAlter'; tableName: string; columnName: string; changes: ColumnChanges }
   | { type: 'ColumnDrop'; tableName: string; columnName: string }
   | { type: 'ConstraintAdd'; constraint: DatabaseConstraint }
+  | { type: 'ConstraintRename'; tableName: string; oldName: string; newName: string }
   | { type: 'ConstraintDrop'; tableName: string; constraintName: string }
   | { type: 'IndexCreate'; index: DatabaseIndex }
+  | { type: 'IndexRename'; tableName: string; oldName: string; newName: string }
   | { type: 'IndexDrop'; indexName: string }
   | { type: 'TriggerCreate'; trigger: DatabaseTrigger }
   | { type: 'TriggerDrop'; tableName: string; triggerName: string }
@@ -476,6 +504,9 @@ export type SchemaDiff = { reason: string } & (
   | { type: 'ParameterReset'; databaseName: string; parameterName: string }
   | { type: 'EnumCreate'; enum: DatabaseEnum }
   | { type: 'EnumDrop'; enumName: string }
+  | { type: 'OverrideCreate'; override: DatabaseOverride }
+  | { type: 'OverrideUpdate'; override: DatabaseOverride }
+  | { type: 'OverrideDrop'; overrideName: string }
 );
 
 export type CompareFunction<T> = (source: T, target: T) => SchemaDiff[];
@@ -483,11 +514,15 @@ export type Comparer<T> = {
   onMissing: (source: T) => SchemaDiff[];
   onExtra: (target: T) => SchemaDiff[];
   onCompare: CompareFunction<T>;
+  /** if two items have the same key, they are considered identical and can be renamed via `onRename` */
+  getRenameKey?: (item: T) => string;
+  onRename?: (source: T, target: T) => SchemaDiff[];
 };
 
 export enum Reason {
   MissingInSource = 'missing in source',
   MissingInTarget = 'missing in target',
+  Rename = 'name has changed',
 }
 
 export type Timestamp = KyselyColumnType<Date, Date | string, Date | string>;
