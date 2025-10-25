@@ -244,6 +244,17 @@ export type UserPreferencesUpdateDto = {
     sharedLinks?: SharedLinksUpdate;
     tags?: TagsUpdate;
 };
+export type SessionResponseDto = {
+    appVersion: string | null;
+    createdAt: string;
+    current: boolean;
+    deviceOS: string;
+    deviceType: string;
+    expiresAt?: string;
+    id: string;
+    isPendingSyncReset: boolean;
+    updatedAt: string;
+};
 export type AssetStatsResponseDto = {
     images: number;
     total: number;
@@ -1192,16 +1203,6 @@ export type ServerVersionHistoryResponseDto = {
     id: string;
     version: string;
 };
-export type SessionResponseDto = {
-    createdAt: string;
-    current: boolean;
-    deviceOS: string;
-    deviceType: string;
-    expiresAt?: string;
-    id: string;
-    isPendingSyncReset: boolean;
-    updatedAt: string;
-};
 export type SessionCreateDto = {
     deviceOS?: string;
     deviceType?: string;
@@ -1209,6 +1210,7 @@ export type SessionCreateDto = {
     duration?: number;
 };
 export type SessionCreateResponseDto = {
+    appVersion: string | null;
     createdAt: string;
     current: boolean;
     deviceOS: string;
@@ -1851,6 +1853,19 @@ export function restoreUserAdmin({ id }: {
     }>(`/admin/users/${encodeURIComponent(id)}/restore`, {
         ...opts,
         method: "POST"
+    }));
+}
+/**
+ * This endpoint is an admin-only route, and requires the `adminSession.read` permission.
+ */
+export function getUserSessionsAdmin({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: SessionResponseDto[];
+    }>(`/admin/users/${encodeURIComponent(id)}/sessions`, {
+        ...opts
     }));
 }
 /**
@@ -3551,9 +3566,10 @@ export function searchAssetStatistics({ statisticsSearchDto }: {
 /**
  * This endpoint requires the `asset.read` permission.
  */
-export function getSearchSuggestions({ country, includeNull, make, model, state, $type }: {
+export function getSearchSuggestions({ country, includeNull, lensModel, make, model, state, $type }: {
     country?: string;
     includeNull?: boolean;
+    lensModel?: string;
     make?: string;
     model?: string;
     state?: string;
@@ -3565,6 +3581,7 @@ export function getSearchSuggestions({ country, includeNull, make, model, state,
     }>(`/search/suggestions${QS.query(QS.explode({
         country,
         includeNull,
+        lensModel,
         make,
         model,
         state,
@@ -4830,6 +4847,7 @@ export enum Permission {
     AdminUserRead = "adminUser.read",
     AdminUserUpdate = "adminUser.update",
     AdminUserDelete = "adminUser.delete",
+    AdminSessionRead = "adminSession.read",
     AdminAuthUnlinkAll = "adminAuth.unlinkAll"
 }
 export enum AssetMetadataKey {
@@ -4903,7 +4921,8 @@ export enum SearchSuggestionType {
     State = "state",
     City = "city",
     CameraMake = "camera-make",
-    CameraModel = "camera-model"
+    CameraModel = "camera-model",
+    CameraLensModel = "camera-lens-model"
 }
 export enum SharedLinkType {
     Album = "ALBUM",
