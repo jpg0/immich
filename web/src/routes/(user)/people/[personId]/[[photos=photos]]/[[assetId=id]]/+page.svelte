@@ -11,10 +11,6 @@
   import ButtonContextMenu from '$lib/components/shared-components/context-menu/button-context-menu.svelte';
   import MenuOption from '$lib/components/shared-components/context-menu/menu-option.svelte';
   import ControlAppBar from '$lib/components/shared-components/control-app-bar.svelte';
-  import {
-    NotificationType,
-    notificationController,
-  } from '$lib/components/shared-components/notification/notification';
   import AddToAlbum from '$lib/components/timeline/actions/AddToAlbumAction.svelte';
   import ArchiveAction from '$lib/components/timeline/actions/ArchiveAction.svelte';
   import ChangeDate from '$lib/components/timeline/actions/ChangeDateAction.svelte';
@@ -39,7 +35,7 @@
   import { locale } from '$lib/stores/preferences.store';
   import { preferences } from '$lib/stores/user.store';
   import { websocketEvents } from '$lib/stores/websocket';
-  import { getPeopleThumbnailUrl, handlePromiseError } from '$lib/utils';
+  import { getPeopleThumbnailUrl } from '$lib/utils';
   import { handleError } from '$lib/utils/handle-error';
   import { isExternalUrl } from '$lib/utils/navigation';
   import {
@@ -49,7 +45,7 @@
     updatePerson,
     type PersonResponseDto,
   } from '@immich/sdk';
-  import { LoadingSpinner, modalManager } from '@immich/ui';
+  import { LoadingSpinner, modalManager, toastManager } from '@immich/ui';
   import {
     mdiAccountBoxOutline,
     mdiAccountMultipleCheckOutline,
@@ -165,10 +161,7 @@
         personUpdateDto: { isHidden: !person.isHidden },
       });
 
-      notificationController.show({
-        message: $t('changed_visibility_successfully'),
-        type: NotificationType.Info,
-      });
+      toastManager.success($t('changed_visibility_successfully'));
 
       await goto(previousRoute);
     } catch (error) {
@@ -186,10 +179,7 @@
       // Invalidate to reload the page data and have the favorite status updated
       await invalidateAll();
 
-      notificationController.show({
-        message: updatedPerson.isFavorite ? $t('added_to_favorites') : $t('removed_from_favorites'),
-        type: NotificationType.Info,
-      });
+      toastManager.success(updatedPerson.isFavorite ? $t('added_to_favorites') : $t('removed_from_favorites'));
     } catch (error) {
       handleError(error, $t('errors.unable_to_add_remove_favorites', { values: { favorite: person.isFavorite } }));
     }
@@ -208,7 +198,7 @@
     }
     try {
       person = await updatePerson({ id: person.id, personUpdateDto: { featureFaceAssetId: asset.id } });
-      notificationController.show({ message: $t('feature_photo_updated'), type: NotificationType.Info });
+      toastManager.success($t('feature_photo_updated'));
     } catch (error) {
       handleError(error, $t('errors.unable_to_set_feature_photo'));
     }
@@ -270,11 +260,7 @@
 
     try {
       person = await updatePerson({ id: person.id, personUpdateDto: { name: personName } });
-
-      notificationController.show({
-        message: $t('change_name_successfully'),
-        type: NotificationType.Info,
-      });
+      toastManager.success($t('change_name_successfully'));
     } catch (error) {
       handleError(error, $t('errors.unable_to_save_name'));
     }
@@ -360,12 +346,6 @@
   let person = $derived(data.person);
 
   let thumbnailData = $derived(getPeopleThumbnailUrl(person));
-
-  $effect(() => {
-    if (person) {
-      handlePromiseError(updateAssetCount());
-    }
-  });
 
   const handleSetVisibility = (assetIds: string[]) => {
     timelineManager.removeAssets(assetIds);
