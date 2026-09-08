@@ -8,33 +8,29 @@ import {
   Param,
   ParseFilePipe,
   Post,
-  Put,
   Query,
   Req,
   Res,
   UploadedFiles,
   UseInterceptors,
 } from '@nestjs/common';
-import { ApiBody, ApiConsumes, ApiHeader, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { ApiBody, ApiConsumes, ApiHeader, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { NextFunction, Request, Response } from 'express';
-import { EndpointLifecycle } from 'src/decorators';
+import { Endpoint, HistoryBuilder } from 'src/decorators';
 import {
   AssetBulkUploadCheckResponseDto,
   AssetMediaResponseDto,
   AssetMediaStatus,
-  CheckExistingAssetsResponseDto,
 } from 'src/dtos/asset-media-response.dto';
 import {
   AssetBulkUploadCheckDto,
   AssetMediaCreateDto,
   AssetMediaOptionsDto,
-  AssetMediaReplaceDto,
   AssetMediaSize,
-  CheckExistingAssetsDto,
-  UploadFieldName,
 } from 'src/dtos/asset-media.dto';
+import { AssetDownloadOriginalDto } from 'src/dtos/asset.dto';
 import { AuthDto } from 'src/dtos/auth.dto';
-import { ImmichHeader, Permission, RouteKey } from 'src/enum';
+import { ApiTag, ImmichHeader, Permission, RouteKey } from 'src/enum';
 import { AssetUploadInterceptor } from 'src/middleware/asset-upload.interceptor';
 import { Auth, Authenticated, FileResponse } from 'src/middleware/auth.guard';
 import { FileUploadInterceptor, getFiles } from 'src/middleware/file-upload.interceptor';
@@ -44,7 +40,7 @@ import { UploadFiles } from 'src/types';
 import { ImmichFileResponse, sendFile } from 'src/utils/file';
 import { FileNotEmptyValidator, UUIDParamDto } from 'src/validation';
 
-@ApiTags('Assets')
+@ApiTags(ApiTag.Assets)
 @Controller(RouteKey.Asset)
 export class AssetMediaController {
   constructor(
@@ -53,6 +49,7 @@ export class AssetMediaController {
   ) {}
 
   @Post()
+  @Authenticated({ permission: Permission.AssetUpload, sharedLink: true })
   @UseInterceptors(AssetUploadInterceptor, FileUploadInterceptor)
   @ApiConsumes('multipart/form-data')
   @ApiHeader({
@@ -61,7 +58,21 @@ export class AssetMediaController {
     required: false,
   })
   @ApiBody({ description: 'Asset Upload Information', type: AssetMediaCreateDto })
-  @Authenticated({ permission: Permission.AssetUpload, sharedLink: true })
+  @ApiResponse({
+    status: 200,
+    description: 'Asset is a duplicate',
+    type: AssetMediaResponseDto,
+  })
+  @ApiResponse({
+    status: 201,
+    description: 'Asset uploaded successfully',
+    type: AssetMediaResponseDto,
+  })
+  @Endpoint({
+    summary: 'Upload asset',
+    description: 'Uploads a new asset to the server.',
+    history: new HistoryBuilder().added('v1').beta('v1').stable('v2'),
+  })
   async uploadAsset(
     @Auth() auth: AuthDto,
     @UploadedFiles(new ParseFilePipe({ validators: [new FileNotEmptyValidator(['assetData'])] })) files: UploadFiles,
@@ -81,47 +92,30 @@ export class AssetMediaController {
   @Get(':id/original')
   @FileResponse()
   @Authenticated({ permission: Permission.AssetDownload, sharedLink: true })
+  @Endpoint({
+    summary: 'Download original asset',
+    description: 'Downloads the original file of the specified asset.',
+    history: new HistoryBuilder().added('v1').beta('v1').stable('v2'),
+  })
   async downloadAsset(
     @Auth() auth: AuthDto,
     @Param() { id }: UUIDParamDto,
+    @Query() dto: AssetDownloadOriginalDto,
     @Res() res: Response,
     @Next() next: NextFunction,
   ) {
-    await sendFile(res, next, () => this.service.downloadOriginal(auth, id), this.logger);
-  }
-
-  /**
-   *  Replace the asset with new file, without changing its id
-   */
-  @Put(':id/original')
-  @UseInterceptors(FileUploadInterceptor)
-  @ApiConsumes('multipart/form-data')
-  @EndpointLifecycle({
-    addedAt: 'v1.106.0',
-    deprecatedAt: 'v1.142.0',
-    summary: 'replaceAsset',
-    description: 'Replace the asset with new file, without changing its id',
-  })
-  @Authenticated({ permission: Permission.AssetReplace, sharedLink: true })
-  async replaceAsset(
-    @Auth() auth: AuthDto,
-    @Param() { id }: UUIDParamDto,
-    @UploadedFiles(new ParseFilePipe({ validators: [new FileNotEmptyValidator([UploadFieldName.ASSET_DATA])] }))
-    files: UploadFiles,
-    @Body() dto: AssetMediaReplaceDto,
-    @Res({ passthrough: true }) res: Response,
-  ): Promise<AssetMediaResponseDto> {
-    const { file } = getFiles(files);
-    const responseDto = await this.service.replaceAsset(auth, id, dto, file);
-    if (responseDto.status === AssetMediaStatus.DUPLICATE) {
-      res.status(HttpStatus.OK);
-    }
-    return responseDto;
+    await sendFile(res, next, () => this.service.downloadOriginal(auth, id, dto), this.logger);
   }
 
   @Get(':id/thumbnail')
   @FileResponse()
   @Authenticated({ permission: Permission.AssetView, sharedLink: true })
+  @Endpoint({
+    summary: 'View asset thumbnail',
+    description:
+      'Retrieve the thumbnail image for the specified asset. Viewing the fullsize thumbnail might redirect to downloadAsset, which requires a different permission.',
+    history: new HistoryBuilder().added('v1').beta('v1').stable('v2'),
+  })
   async viewAsset(
     @Auth() auth: AuthDto,
     @Param() { id }: UUIDParamDto,
@@ -130,6 +124,16 @@ export class AssetMediaController {
     @Res() res: Response,
     @Next() next: NextFunction,
   ) {
+    if (dto.size === AssetMediaSize.Original) {
+      this.logger.deprecate(
+        'Calling the thumbnail endpoint with size=original is deprecated. Use the :id/original endpoint instead',
+      );
+      const [_, reqSearch] = req.url.split('?', 2);
+      const redirSearchParams = new URLSearchParams(reqSearch);
+      redirSearchParams.delete('size');
+      return res.redirect('original?' + redirSearchParams.toString());
+    }
+
     const viewThumbnailRes = await this.service.viewThumbnail(auth, id, dto);
 
     if (viewThumbnailRes instanceof ImmichFileResponse) {
@@ -138,7 +142,7 @@ export class AssetMediaController {
       // viewThumbnailRes is a AssetMediaRedirectResponse
       // which redirects to the original asset or a specific size to make better use of caching
       const { targetSize } = viewThumbnailRes;
-      const [reqPath, reqSearch] = req.url.split('?');
+      const [reqPath, reqSearch] = req.url.split('?', 2);
       let redirPath: string;
       const redirSearchParams = new URLSearchParams(reqSearch);
       if (targetSize === 'original') {
@@ -159,6 +163,11 @@ export class AssetMediaController {
   @Get(':id/video/playback')
   @FileResponse()
   @Authenticated({ permission: Permission.AssetView, sharedLink: true })
+  @Endpoint({
+    summary: 'Play asset video',
+    description: 'Streams the video file for the specified asset. This endpoint also supports byte range requests.',
+    history: new HistoryBuilder().added('v1').beta('v1').stable('v2'),
+  })
   async playAssetVideo(
     @Auth() auth: AuthDto,
     @Param() { id }: UUIDParamDto,
@@ -168,31 +177,12 @@ export class AssetMediaController {
     await sendFile(res, next, () => this.service.playbackVideo(auth, id), this.logger);
   }
 
-  /**
-   * Checks if multiple assets exist on the server and returns all existing - used by background backup
-   */
-  @Post('exist')
-  @Authenticated()
-  @ApiOperation({
-    summary: 'checkExistingAssets',
-    description: 'Checks if multiple assets exist on the server and returns all existing - used by background backup',
-  })
-  @HttpCode(HttpStatus.OK)
-  checkExistingAssets(
-    @Auth() auth: AuthDto,
-    @Body() dto: CheckExistingAssetsDto,
-  ): Promise<CheckExistingAssetsResponseDto> {
-    return this.service.checkExistingAssets(auth, dto);
-  }
-
-  /**
-   * Checks if assets exist by checksums
-   */
   @Post('bulk-upload-check')
   @Authenticated({ permission: Permission.AssetUpload })
-  @ApiOperation({
-    summary: 'checkBulkUpload',
-    description: 'Checks if assets exist by checksums',
+  @Endpoint({
+    summary: 'Check bulk upload',
+    description: 'Determine which assets have already been uploaded to the server based on their SHA1 checksums.',
+    history: new HistoryBuilder().added('v1').beta('v1').stable('v2'),
   })
   @HttpCode(HttpStatus.OK)
   checkBulkUpload(

@@ -128,8 +128,8 @@ class PhotoViewGallery extends StatefulWidget {
   /// The builder must return a [PhotoViewGalleryPageOptions].
   const PhotoViewGallery.builder({
     super.key,
-    required this.itemCount,
-    required this.builder,
+    required int this.itemCount,
+    required PhotoViewGalleryBuilder this.builder,
     this.loadingBuilder,
     this.backgroundDecoration,
     this.wantKeepAlive = false,
@@ -145,9 +145,7 @@ class PhotoViewGallery extends StatefulWidget {
     this.customSize,
     this.allowImplicitScrolling = false,
     this.enablePanAlways = false,
-  }) : pageOptions = null,
-       assert(itemCount != null),
-       assert(builder != null);
+  }) : pageOptions = null;
 
   /// A list of options to describe the items in the gallery
   final List<PhotoViewGalleryPageOptions>? pageOptions;
@@ -284,6 +282,7 @@ class _PhotoViewGalleryState extends State<PhotoViewGallery> {
             onDragStart: pageOption.onDragStart,
             onDragEnd: pageOption.onDragEnd,
             onDragUpdate: pageOption.onDragUpdate,
+            onDragCancel: pageOption.onDragCancel,
             onScaleEnd: pageOption.onScaleEnd,
             onLongPressStart: pageOption.onLongPressStart,
             gestureDetectorBehavior: pageOption.gestureDetectorBehavior,
@@ -321,6 +320,7 @@ class _PhotoViewGalleryState extends State<PhotoViewGallery> {
             onDragStart: pageOption.onDragStart,
             onDragEnd: pageOption.onDragEnd,
             onDragUpdate: pageOption.onDragUpdate,
+            onDragCancel: pageOption.onDragCancel,
             onScaleEnd: pageOption.onScaleEnd,
             onLongPressStart: pageOption.onLongPressStart,
             gestureDetectorBehavior: pageOption.gestureDetectorBehavior,
@@ -350,9 +350,9 @@ class _PhotoViewGalleryState extends State<PhotoViewGallery> {
 /// The [maxScale], [minScale] and [initialScale] options may be [double] or a [PhotoViewComputedScale] constant
 ///
 class PhotoViewGalleryPageOptions {
-  PhotoViewGalleryPageOptions({
+  const PhotoViewGalleryPageOptions({
     this.key,
-    required this.imageProvider,
+    required ImageProvider this.imageProvider,
     this.heroAttributes,
     this.semanticLabel,
     this.minScale,
@@ -367,6 +367,7 @@ class PhotoViewGalleryPageOptions {
     this.onDragStart,
     this.onDragEnd,
     this.onDragUpdate,
+    this.onDragCancel,
     this.onScaleEnd,
     this.onLongPressStart,
     this.gestureDetectorBehavior,
@@ -376,8 +377,7 @@ class PhotoViewGalleryPageOptions {
     this.disableGestures,
     this.errorBuilder,
   }) : child = null,
-       childSize = null,
-       assert(imageProvider != null);
+       childSize = null;
 
   const PhotoViewGalleryPageOptions.customChild({
     this.key,
@@ -397,6 +397,7 @@ class PhotoViewGalleryPageOptions {
     this.onDragStart,
     this.onDragEnd,
     this.onDragUpdate,
+    this.onDragCancel,
     this.onScaleEnd,
     this.onLongPressStart,
     this.gestureDetectorBehavior,
@@ -454,8 +455,11 @@ class PhotoViewGalleryPageOptions {
   /// Mirror to [PhotoView.onDragDown]
   final PhotoViewImageDragEndCallback? onDragEnd;
 
-  /// Mirror to [PhotoView.onDraUpdate]
+  /// Mirror to [PhotoView.onDragUpdate]
   final PhotoViewImageDragUpdateCallback? onDragUpdate;
+
+  /// Mirror to [PhotoView.onDragCancel]
+  final VoidCallback? onDragCancel;
 
   /// Mirror to [PhotoView.onTapDown]
   final PhotoViewImageTapDownCallback? onTapDown;

@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { join } from 'node:path';
+import { ErrorMessages } from 'src/constants';
 import { StorageCore } from 'src/cores/storage.core';
 import { OnEvent, OnJob } from 'src/decorators';
 import {
@@ -29,8 +30,8 @@ export class StorageService extends BaseService {
     const candidates = ['/data', '/usr/src/app/upload'];
 
     for (const candidate of candidates) {
-      const exists = this.storageRepository.existsSync(candidate);
-      if (exists) {
+      const isExists = this.storageRepository.existsSync(candidate);
+      if (isExists) {
         targets.push(candidate);
       }
     }
@@ -55,7 +56,7 @@ export class StorageService extends BaseService {
         flags.mountChecks = {};
       }
 
-      let updated = false;
+      let isUpdated = false;
 
       this.logger.log(`Verifying system mount folder checks, current state: ${JSON.stringify(flags)}`);
 
@@ -72,11 +73,11 @@ export class StorageService extends BaseService {
 
           if (!flags.mountChecks[folder]) {
             flags.mountChecks[folder] = true;
-            updated = true;
+            isUpdated = true;
           }
         }
 
-        if (updated) {
+        if (isUpdated) {
           await this.systemMetadataRepository.set(SystemMetadataKey.SystemFlags, flags);
           this.logger.log('Successfully enabled system mount folders checks');
         }
@@ -114,9 +115,7 @@ export class StorageService extends BaseService {
           this.logger.log(`Media location changed (from=${previous}, to=${current})`);
 
           if (!path.startsWith(previous)) {
-            throw new Error(
-              'Detected an inconsistent media location. For more information, see https://docs.immich.app/errors#inconsistent-media-location',
-            );
+            throw new Error(ErrorMessages.InconsistentMediaLocation);
           }
 
           this.logger.warn(
@@ -167,7 +166,7 @@ export class StorageService extends BaseService {
     const { folderPath, internalPath, externalPath } = this.getMountFilePaths(folder);
     try {
       this.storageRepository.mkdirSync(folderPath);
-      await this.storageRepository.createFile(internalPath, Buffer.from(`${Date.now()}`));
+      await this.storageRepository.createFile(internalPath, Buffer.from(Date.now().toString()));
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === 'EEXIST') {
         this.logger.warn('Found existing mount file, skipping creation');
@@ -181,7 +180,7 @@ export class StorageService extends BaseService {
   private async verifyWriteAccess(folder: StorageFolder) {
     const { internalPath, externalPath } = this.getMountFilePaths(folder);
     try {
-      await this.storageRepository.overwriteFile(internalPath, Buffer.from(`${Date.now()}`));
+      await this.storageRepository.overwriteFile(internalPath, Buffer.from(Date.now().toString()));
     } catch (error) {
       this.logger.error(`Failed to write ${internalPath}: ${error}`);
       throw new ImmichStartupError(`Failed to write "${externalPath} - ${docsMessage}"`);

@@ -1,7 +1,25 @@
+import {
+  AfterDeleteTrigger,
+  Column,
+  ForeignKeyColumn,
+  Generated,
+  PrimaryGeneratedColumn,
+  Table,
+  Timestamp,
+  UpdateDateColumn,
+} from '@immich/sql-tools';
+import { UpdatedAtTrigger, UpdateIdColumn } from 'src/decorators';
+import { asset_ocr_delete_audit } from 'src/schema/functions';
 import { AssetTable } from 'src/schema/tables/asset.table';
-import { Column, ForeignKeyColumn, Generated, PrimaryGeneratedColumn, Table } from 'src/sql-tools';
 
 @Table('asset_ocr')
+@UpdatedAtTrigger('asset_ocr_updatedAt')
+@AfterDeleteTrigger({
+  scope: 'statement',
+  function: asset_ocr_delete_audit,
+  referencingOldTableAs: 'old',
+  when: 'pg_trigger_depth() = 0',
+})
 export class AssetOcrTable {
   @PrimaryGeneratedColumn()
   id!: Generated<string>;
@@ -42,4 +60,13 @@ export class AssetOcrTable {
 
   @Column({ type: 'text' })
   text!: string;
+
+  @Column({ type: 'boolean', default: true })
+  isVisible!: Generated<boolean>;
+
+  @UpdateDateColumn()
+  updatedAt!: Generated<Timestamp>;
+
+  @UpdateIdColumn({ index: true })
+  updateId!: Generated<string>;
 }

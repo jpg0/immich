@@ -1,13 +1,24 @@
-import { langs } from '$lib/constants';
 import { eventManager } from '$lib/managers/event-manager.svelte';
 import { lang } from '$lib/stores/preferences.store';
+import { langs } from '$lib/utils/i18n';
 
 class LanguageManager {
   constructor() {
-    eventManager.on('app.init', () => lang.subscribe((lang) => this.setLanguage(lang)));
+    eventManager.on({
+      AppInit: () => this.init(),
+    });
   }
 
+  initialized = $state(false);
   rtl = $state(false);
+
+  init() {
+    if (this.initialized) {
+      return;
+    }
+    this.initialized = true;
+    lang.subscribe((lang) => this.setLanguage(lang));
+  }
 
   setLanguage(code: string) {
     const item = langs.find((item) => item.code === code);
@@ -19,7 +30,7 @@ class LanguageManager {
 
     document.body.setAttribute('dir', item.rtl ? 'rtl' : 'ltr');
 
-    eventManager.emit('language.change', item);
+    eventManager.emit('LanguageChange', item);
   }
 }
 

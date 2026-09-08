@@ -1,66 +1,27 @@
-import 'package:easy_localization/easy_localization.dart';
+import 'package:flutter/foundation.dart';
+import 'package:freezed_annotation/freezed_annotation.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
-enum SyncStatus {
-  idle,
-  syncing,
-  success,
-  error;
+part 'sync_status.provider.freezed.dart';
 
-  localized() {
-    return switch (this) {
-      SyncStatus.idle => "idle".tr(),
-      SyncStatus.syncing => "running".tr(),
-      SyncStatus.success => "success".tr(),
-      SyncStatus.error => "error".tr(),
-    };
-  }
-}
+enum SyncStatus { idle, syncing, success, error }
 
-class SyncStatusState {
-  final SyncStatus remoteSyncStatus;
-  final SyncStatus localSyncStatus;
-  final SyncStatus hashJobStatus;
+@freezed
+abstract class SyncStatusState with _$SyncStatusState {
+  const SyncStatusState._();
 
-  final String? errorMessage;
-
-  const SyncStatusState({
-    this.remoteSyncStatus = SyncStatus.idle,
-    this.localSyncStatus = SyncStatus.idle,
-    this.hashJobStatus = SyncStatus.idle,
-    this.errorMessage,
-  });
-
-  SyncStatusState copyWith({
-    SyncStatus? remoteSyncStatus,
-    SyncStatus? localSyncStatus,
-    SyncStatus? hashJobStatus,
+  const factory SyncStatusState({
+    @Default(SyncStatus.idle) SyncStatus remoteSyncStatus,
+    @Default(SyncStatus.idle) SyncStatus localSyncStatus,
+    @Default(SyncStatus.idle) SyncStatus hashJobStatus,
+    @Default(SyncStatus.idle) SyncStatus cloudIdSyncStatus,
     String? errorMessage,
-  }) {
-    return SyncStatusState(
-      remoteSyncStatus: remoteSyncStatus ?? this.remoteSyncStatus,
-      localSyncStatus: localSyncStatus ?? this.localSyncStatus,
-      hashJobStatus: hashJobStatus ?? this.hashJobStatus,
-      errorMessage: errorMessage ?? this.errorMessage,
-    );
-  }
+  }) = _SyncStatusState;
 
   bool get isRemoteSyncing => remoteSyncStatus == SyncStatus.syncing;
   bool get isLocalSyncing => localSyncStatus == SyncStatus.syncing;
   bool get isHashing => hashJobStatus == SyncStatus.syncing;
-
-  @override
-  bool operator ==(Object other) {
-    if (identical(this, other)) return true;
-    return other is SyncStatusState &&
-        other.remoteSyncStatus == remoteSyncStatus &&
-        other.localSyncStatus == localSyncStatus &&
-        other.hashJobStatus == hashJobStatus &&
-        other.errorMessage == errorMessage;
-  }
-
-  @override
-  int get hashCode => Object.hash(remoteSyncStatus, localSyncStatus, hashJobStatus, errorMessage);
+  bool get isCloudIdSyncing => cloudIdSyncStatus == SyncStatus.syncing;
 }
 
 class SyncStatusNotifier extends Notifier<SyncStatusState> {
@@ -71,6 +32,7 @@ class SyncStatusNotifier extends Notifier<SyncStatusState> {
       remoteSyncStatus: SyncStatus.idle,
       localSyncStatus: SyncStatus.idle,
       hashJobStatus: SyncStatus.idle,
+      cloudIdSyncStatus: SyncStatus.idle,
     );
   }
 
@@ -79,7 +41,11 @@ class SyncStatusNotifier extends Notifier<SyncStatusState> {
   ///
 
   void setRemoteSyncStatus(SyncStatus status, [String? errorMessage]) {
-    state = state.copyWith(remoteSyncStatus: status, errorMessage: status == SyncStatus.error ? errorMessage : null);
+    // TODO(agg23): These error messages probably should be cleared, not preserved on null
+    state = state.copyWith(
+      remoteSyncStatus: status,
+      errorMessage: (status == SyncStatus.error ? errorMessage : null) ?? state.errorMessage,
+    );
   }
 
   void startRemoteSync() => setRemoteSyncStatus(SyncStatus.syncing);
@@ -91,7 +57,11 @@ class SyncStatusNotifier extends Notifier<SyncStatusState> {
   ///
 
   void setLocalSyncStatus(SyncStatus status, [String? errorMessage]) {
-    state = state.copyWith(localSyncStatus: status, errorMessage: status == SyncStatus.error ? errorMessage : null);
+    // TODO(agg23): These error messages probably should be cleared, not preserved on null
+    state = state.copyWith(
+      localSyncStatus: status,
+      errorMessage: (status == SyncStatus.error ? errorMessage : null) ?? state.errorMessage,
+    );
   }
 
   void startLocalSync() => setLocalSyncStatus(SyncStatus.syncing);
@@ -103,12 +73,32 @@ class SyncStatusNotifier extends Notifier<SyncStatusState> {
   ///
 
   void setHashJobStatus(SyncStatus status, [String? errorMessage]) {
-    state = state.copyWith(hashJobStatus: status, errorMessage: status == SyncStatus.error ? errorMessage : null);
+    // TODO(agg23): These error messages probably should be cleared, not preserved on null
+    state = state.copyWith(
+      hashJobStatus: status,
+      errorMessage: (status == SyncStatus.error ? errorMessage : null) ?? state.errorMessage,
+    );
   }
 
   void startHashJob() => setHashJobStatus(SyncStatus.syncing);
   void completeHashJob() => setHashJobStatus(SyncStatus.success);
   void errorHashJob(String error) => setHashJobStatus(SyncStatus.error, error);
+
+  ///
+  /// Cloud ID Sync Job
+  ///
+
+  void setCloudIdSyncStatus(SyncStatus status, [String? errorMessage]) {
+    // TODO(agg23): These error messages probably should be cleared, not preserved on null
+    state = state.copyWith(
+      cloudIdSyncStatus: status,
+      errorMessage: (status == SyncStatus.error ? errorMessage : null) ?? state.errorMessage,
+    );
+  }
+
+  void startCloudIdSync() => setCloudIdSyncStatus(SyncStatus.syncing);
+  void completeCloudIdSync() => setCloudIdSyncStatus(SyncStatus.success);
+  void errorCloudIdSync(String error) => setCloudIdSyncStatus(SyncStatus.error, error);
 }
 
 final syncStatusProvider = NotifierProvider<SyncStatusNotifier, SyncStatusState>(SyncStatusNotifier.new);

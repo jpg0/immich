@@ -1,7 +1,7 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { AuthDto } from 'src/dtos/auth.dto';
+import { SystemConfigSmtpDto } from 'src/dtos/config.dto';
 import { mapNotification, NotificationCreateDto } from 'src/dtos/notification.dto';
-import { SystemConfigSmtpDto } from 'src/dtos/system-config.dto';
 import { NotificationLevel, NotificationType } from 'src/enum';
 import { EmailTemplate } from 'src/repositories/email.repository';
 import { BaseService } from 'src/services/base.service';
@@ -59,7 +59,7 @@ export class NotificationAdminService extends BaseService {
   async getTemplate(name: EmailTemplate, customTemplate: string) {
     const { server, templates } = await this.getConfig({ withCache: false });
 
-    let templateResponse = '';
+    let templateResponse: string;
 
     switch (name) {
       case EmailTemplate.WELCOME: {

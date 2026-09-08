@@ -1,11 +1,11 @@
 import { Injectable } from '@nestjs/common';
-import { Insertable, Kysely, sql, Updateable } from 'kysely';
+import { Insertable, Kysely, OrderByDirection, sql, Updateable } from 'kysely';
 import { jsonArrayFrom } from 'kysely/helpers/postgres';
 import { DateTime } from 'luxon';
 import { InjectKysely } from 'nestjs-kysely';
 import { Chunked, ChunkedSet, DummyValue, GenerateSql } from 'src/decorators';
 import { MemorySearchDto } from 'src/dtos/memory.dto';
-import { AssetVisibility } from 'src/enum';
+import { AssetOrderWithRandom, AssetVisibility } from 'src/enum';
 import { DB } from 'src/schema';
 import { MemoryTable } from 'src/schema/tables/memory.table';
 import { IBulkAsset } from 'src/types';
@@ -18,7 +18,7 @@ export class MemoryRepository implements IBulkAsset {
     await this.db
       .deleteFrom('memory_asset')
       .using('asset')
-      .whereRef('memory_asset.assetsId', '=', 'asset.id')
+      .whereRef('memory_asset.assetId', '=', 'asset.id')
       .where('asset.visibility', '!=', AssetVisibility.Timeline)
       .execute();
 
@@ -39,6 +39,12 @@ export class MemoryRepository implements IBulkAsset {
           .where((where) => where.or([where('showAt', 'is', null), where('showAt', '<=', dto.for!)]))
           .where((where) => where.or([where('hideAt', 'is', null), where('hideAt', '>=', dto.for!)])),
       )
+      .$if(dto.isUpcoming !== undefined, (qb) => {
+        const now = DateTime.now().toJSDate();
+        return dto.isUpcoming
+          ? qb.where('showAt', '>', now)
+          : qb.where((where) => where.or([where('showAt', 'is', null), where('showAt', '<=', now)]));
+      })
       .where('deletedAt', dto.isTrashed ? 'is not' : 'is', null)
       .where('ownerId', '=', ownerId);
   }
@@ -56,6 +62,8 @@ export class MemoryRepository implements IBulkAsset {
   @GenerateSql(
     { params: [DummyValue.UUID, {}] },
     { name: 'date filter', params: [DummyValue.UUID, { for: DummyValue.DATE }] },
+    { name: 'upcoming filter', params: [DummyValue.UUID, { isUpcoming: true }] },
+    { name: 'not upcoming filter', params: [DummyValue.UUID, { isUpcoming: false }] },
   )
   search(ownerId: string, dto: MemorySearchDto) {
     return this.searchBuilder(ownerId, dto)
@@ -64,15 +72,43 @@ export class MemoryRepository implements IBulkAsset {
           eb
             .selectFrom('asset')
             .selectAll('asset')
-            .innerJoin('memory_asset', 'asset.id', 'memory_asset.assetsId')
+            .innerJoin('memory_asset', 'asset.id', 'memory_asset.assetId')
             .whereRef('memory_asset.memoriesId', '=', 'memory.id')
-            .orderBy('asset.fileCreatedAt', 'asc')
             .where('asset.visibility', '=', sql.lit(AssetVisibility.Timeline))
-            .where('asset.deletedAt', 'is', null),
+            .where('asset.deletedAt', 'is', null)
+            .where((eb) =>
+              eb.not(
+                eb.exists(
+                  eb
+                    .selectFrom('asset_face')
+                    .innerJoin('person', (join) =>
+                      join
+                        .onRef('person.personGroupId', '=', 'asset_face.personGroupId')
+                        .onRef('person.ownerId', '=', 'asset.ownerId'),
+                    )
+                    .select((eb) => eb.val(1).as('one'))
+                    .whereRef('asset_face.assetId', '=', 'asset.id')
+                    .where('person.isHidden', '=', true),
+                ),
+              ),
+            )
+            .orderBy('asset.fileCreatedAt', 'asc'),
         ).as('assets'),
       )
       .selectAll('memory')
-      .orderBy('memoryAt', 'desc')
+      .$call((qb) => {
+        if (dto.order === AssetOrderWithRandom.Random) {
+          return qb.orderBy(sql`RANDOM()`);
+        }
+
+        const direction = (dto.order?.toLowerCase() || 'desc') as OrderByDirection;
+        return qb
+          .orderBy('showAt', (ob) => (direction === 'asc' ? ob.asc() : ob.desc()).nullsLast())
+          .orderBy('memoryAt', direction);
+      })
+      .$if(dto.id !== undefined, (qb) => qb.where('id', '=', dto.id!))
+      .$if(dto.size !== undefined, (qb) => qb.limit(dto.size!))
+      .$if(dto.page !== undefined && dto.size !== undefined, (qb) => qb.offset((dto.page! - 1) * dto.size!))
       .execute();
   }
 
@@ -86,7 +122,7 @@ export class MemoryRepository implements IBulkAsset {
       const { id } = await tx.insertInto('memory').values(memory).returning('id').executeTakeFirstOrThrow();
 
       if (assetIds.size > 0) {
-        const values = [...assetIds].map((assetId) => ({ memoriesId: id, assetsId: assetId }));
+        const values = [...assetIds].map((assetId) => ({ memoriesId: id, assetId }));
         await tx.insertInto('memory_asset').values(values).execute();
       }
 
@@ -116,12 +152,12 @@ export class MemoryRepository implements IBulkAsset {
 
     const results = await this.db
       .selectFrom('memory_asset')
-      .select(['assetsId'])
+      .select(['assetId'])
       .where('memoriesId', '=', id)
-      .where('assetsId', 'in', assetIds)
+      .where('assetId', 'in', assetIds)
       .execute();
 
-    return new Set(results.map(({ assetsId }) => assetsId));
+    return new Set(results.map(({ assetId }) => assetId));
   }
 
   @GenerateSql({ params: [DummyValue.UUID, [DummyValue.UUID]] })
@@ -132,7 +168,7 @@ export class MemoryRepository implements IBulkAsset {
 
     await this.db
       .insertInto('memory_asset')
-      .values(assetIds.map((assetId) => ({ memoriesId: id, assetsId: assetId })))
+      .values(assetIds.map((assetId) => ({ memoriesId: id, assetId })))
       .execute();
   }
 
@@ -143,7 +179,7 @@ export class MemoryRepository implements IBulkAsset {
       return;
     }
 
-    await this.db.deleteFrom('memory_asset').where('memoriesId', '=', id).where('assetsId', 'in', assetIds).execute();
+    await this.db.deleteFrom('memory_asset').where('memoriesId', '=', id).where('assetId', 'in', assetIds).execute();
   }
 
   private getByIdBuilder(id: string) {
@@ -155,7 +191,7 @@ export class MemoryRepository implements IBulkAsset {
           eb
             .selectFrom('asset')
             .selectAll('asset')
-            .innerJoin('memory_asset', 'asset.id', 'memory_asset.assetsId')
+            .innerJoin('memory_asset', 'asset.id', 'memory_asset.assetId')
             .whereRef('memory_asset.memoriesId', '=', 'memory.id')
             .orderBy('asset.fileCreatedAt', 'asc')
             .where('asset.visibility', '=', sql.lit(AssetVisibility.Timeline))

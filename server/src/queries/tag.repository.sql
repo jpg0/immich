@@ -28,22 +28,39 @@ where
   and "value" = $2
 
 -- TagRepository.upsertValue
-begin
-insert into
-  "tag" ("userId", "value", "parentId")
-values
-  ($1, $2, $3)
-on conflict ("userId", "value") do update
-set
-  "parentId" = $4
-returning
-  "tag"."id",
-  "tag"."value",
-  "tag"."createdAt",
-  "tag"."updatedAt",
-  "tag"."color",
-  "tag"."parentId"
-rollback
+with
+  "created_tag" as (
+    insert into
+      "tag" ("userId", "value", "parentId")
+    values
+      ($1, $2, $3)
+    on conflict ("userId", "value") do update
+    set
+      "parentId" = $4
+    returning
+      *
+  ),
+  "created_tag_closures" as (
+    insert into
+      "tag_closure" ("id_ancestor", "id_descendant")
+    select
+      "created_tag"."id" as "id_ancestor",
+      "created_tag"."id" as "id_descendant"
+    from
+      "created_tag"
+    union all
+    select
+      "tag_closure"."id_ancestor",
+      "created_tag"."id" as "id_descendant"
+    from
+      "created_tag"
+      inner join "tag_closure" on "tag_closure"."id_descendant" = "created_tag"."parentId"
+    on conflict do nothing
+  )
+select
+  *
+from
+  "created_tag"
 
 -- TagRepository.getAll
 select
@@ -61,21 +78,54 @@ order by
   "value"
 
 -- TagRepository.create
-insert into
-  "tag" ("userId", "color", "value")
-values
-  ($1, $2, $3)
-returning
+with
+  "created_tag" as (
+    insert into
+      "tag" ("userId", "color", "value")
+    values
+      ($1, $2, $3)
+    returning
+      *
+  ),
+  "created_tag_closures" as (
+    insert into
+      "tag_closure" ("id_ancestor", "id_descendant")
+    select
+      "created_tag"."id" as "id_ancestor",
+      "created_tag"."id" as "id_descendant"
+    from
+      "created_tag"
+    union all
+    select
+      "tag_closure"."id_ancestor",
+      "created_tag"."id" as "id_descendant"
+    from
+      "created_tag"
+      inner join "tag_closure" on "tag_closure"."id_descendant" = "created_tag"."parentId"
+    on conflict do nothing
+  )
+select
   *
+from
+  "created_tag"
 
 -- TagRepository.update
+begin
+select
+  "value"
+from
+  "tag"
+where
+  "id" = $1
 update "tag"
 set
-  "color" = $1
+  "value" = $1,
+  "color" = $2
 where
-  "id" = $2
+  "id" = $3
 returning
   *
+rollback
 
 -- TagRepository.delete
 delete from "tag"
@@ -84,19 +134,19 @@ where
 
 -- TagRepository.addAssetIds
 insert into
-  "tag_asset" ("tagsId", "assetsId")
+  "tag_asset" ("tagId", "assetId")
 values
   ($1, $2)
 
 -- TagRepository.removeAssetIds
 delete from "tag_asset"
 where
-  "tagsId" = $1
-  and "assetsId" in ($2)
+  "tagId" = $1
+  and "assetId" in ($2)
 
 -- TagRepository.upsertAssetIds
 insert into
-  "tag_asset" ("assetId", "tagsIds")
+  "tag_asset" ("assetId", "tagIds")
 values
   ($1, $2)
 on conflict do nothing
@@ -107,9 +157,9 @@ returning
 begin
 delete from "tag_asset"
 where
-  "assetsId" = $1
+  "assetId" = $1
 insert into
-  "tag_asset" ("tagsId", "assetsId")
+  "tag_asset" ("tagId", "assetId")
 values
   ($1, $2)
 on conflict do nothing

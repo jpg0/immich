@@ -35,18 +35,19 @@
   <a href="README_zh_TW.md">正體中文</a>
   <a href="README_uk_UA.md">Українська</a>
   <a href="README_ru_RU.md">Русский</a>
+  <a href="README_bg_BG.md">Български</a>
   <a href="README_pt_BR.md">Português Brasileiro</a>
   <a href="README_sv_SE.md">Svenska</a>
   <a href="README_ar_JO.md">العربية</a>
   <a href="README_vi_VN.md">Tiếng Việt</a>
+  <a href="README_ml_IN.md">മലയാളം</a>
 </p>
 
-## ข้อควรระวัง
 
-- ⚠️ โพรเจกต์นี้กำลังอยู่ระหว่างการพัฒนา**มีการเปลี่ยนแปลงบ่อยมาก**
-- ⚠️ อาจจะเกิดข้อผิดพลาดและการเปลี่ยนแปลงที่ส่งผลเสีย
-- ⚠️ **ห้ามใช้ระบบนี้เป็นวิธีการเดียวในการจัดเก็บภาพถ่ายและวิดีโอของคุณ**
-- ⚠️ ปฏิบัติตามแผนการสำรองข้อมูลแบบ [3-2-1](https://www.backblaze.com/blog/the-3-2-1-backup-strategy/) สำหรับภาพถ่ายและวิดีโอที่สำคัญของคุณอยู่เสมอ
+> [!WARNING]
+> ⚠️ ปฏิบัติตามแผนการสำรองข้อมูลแบบ [3-2-1](https://www.backblaze.com/blog/the-3-2-1-backup-strategy/) สำหรับภาพถ่ายและวิดีโอที่สำคัญของคุณอยู่เสมอ
+> 
+
 
 > [!NOTE]
 > คุณสามารถหาคู่มือหลัก รวมถึงคู่มือการติดตั้ง ได้ที่ https://immich.app/

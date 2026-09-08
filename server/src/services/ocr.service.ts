@@ -1,11 +1,12 @@
 import { Injectable } from '@nestjs/common';
-import { JOBS_ASSET_PAGINATION_SIZE } from 'src/constants';
+
 import { OnJob } from 'src/decorators';
 import { AssetVisibility, JobName, JobStatus, QueueName } from 'src/enum';
 import { OCR } from 'src/repositories/machine-learning.repository';
 import { BaseService } from 'src/services/base.service';
-import { JobItem, JobOf } from 'src/types';
-import { isOcrEnabled } from 'src/utils/misc';
+import { JobOf } from 'src/types';
+import { tokenizeForSearch } from 'src/utils/database';
+import { batched, isOcrEnabled } from 'src/utils/misc';
 
 @Injectable()
 export class OcrService extends BaseService {
@@ -20,19 +21,10 @@ export class OcrService extends BaseService {
       await this.ocrRepository.deleteAll();
     }
 
-    let jobs: JobItem[] = [];
-    const assets = this.assetJobRepository.streamForOcrJob(force);
-
-    for await (const asset of assets) {
-      jobs.push({ name: JobName.Ocr, data: { id: asset.id } });
-
-      if (jobs.length >= JOBS_ASSET_PAGINATION_SIZE) {
-        await this.jobRepository.queueAll(jobs);
-        jobs = [];
-      }
+    for await (const assets of batched(this.assetJobRepository.streamForOcrJob(force))) {
+      await this.jobRepository.queueAll(assets.map((asset) => ({ name: JobName.Ocr, data: { id: asset.id } })));
     }
 
-    await this.jobRepository.queueAll(jobs);
     return JobStatus.Success;
   }
 
@@ -53,8 +45,8 @@ export class OcrService extends BaseService {
     }
 
     const ocrResults = await this.machineLearningRepository.ocr(asset.previewFile, machineLearning.ocr);
-
-    await this.ocrRepository.upsert(id, this.parseOcrResults(id, ocrResults));
+    const { ocrDataList, searchText } = this.parseOcrResults(id, ocrResults);
+    await this.ocrRepository.upsert(id, ocrDataList, searchText);
 
     await this.assetRepository.upsertJobStatus({ assetId: id, ocrAt: new Date() });
 
@@ -64,7 +56,9 @@ export class OcrService extends BaseService {
 
   private parseOcrResults(id: string, { box, boxScore, text, textScore }: OCR) {
     const ocrDataList = [];
+    const searchTokens = [];
     for (let i = 0; i < text.length; i++) {
+      const rawText = text[i];
       const boxOffset = i * 8;
       ocrDataList.push({
         assetId: id,
@@ -78,9 +72,11 @@ export class OcrService extends BaseService {
         y4: box[boxOffset + 7],
         boxScore: boxScore[i],
         textScore: textScore[i],
-        text: text[i],
+        text: rawText,
       });
+      searchTokens.push(...tokenizeForSearch(rawText));
     }
-    return ocrDataList;
+
+    return { ocrDataList, searchText: searchTokens.join(' ') };
   }
 }

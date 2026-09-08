@@ -2,10 +2,12 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:auto_route/auto_route.dart';
+import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:immich_mobile/domain/models/asset/base_asset.model.dart';
 import 'package:immich_mobile/domain/services/timeline.service.dart';
+import 'package:immich_mobile/extensions/build_context_extensions.dart';
 import 'package:immich_mobile/presentation/widgets/asset_viewer/asset_viewer.page.dart';
 import 'package:immich_mobile/presentation/widgets/images/thumbnail_tile.widget.dart';
 import 'package:immich_mobile/presentation/widgets/timeline/fixed/row.dart';
@@ -51,14 +53,18 @@ class FixedSegment extends Segment {
   @override
   int getMinChildIndexForScrollOffset(double scrollOffset) {
     final adjustedOffset = scrollOffset - gridOffset;
-    if (!adjustedOffset.isFinite || adjustedOffset < 0) return firstIndex;
+    if (!adjustedOffset.isFinite || adjustedOffset < 0) {
+      return firstIndex;
+    }
     return gridIndex + (adjustedOffset / mainAxisExtend).floor();
   }
 
   @override
   int getMaxChildIndexForScrollOffset(double scrollOffset) {
     final adjustedOffset = scrollOffset - gridOffset;
-    if (!adjustedOffset.isFinite || adjustedOffset < 0) return firstIndex;
+    if (!adjustedOffset.isFinite || adjustedOffset < 0) {
+      return firstIndex;
+    }
     return gridIndex + (adjustedOffset / mainAxisExtend).ceil() - 1;
   }
 
@@ -78,6 +84,7 @@ class FixedSegment extends Segment {
       assetCount: numberOfAssets,
       tileHeight: tileHeight,
       spacing: spacing,
+      columnCount: columnCount,
     );
   }
 }
@@ -87,24 +94,33 @@ class _FixedSegmentRow extends ConsumerWidget {
   final int assetCount;
   final double tileHeight;
   final double spacing;
+  final int columnCount;
 
   const _FixedSegmentRow({
     required this.assetIndex,
     required this.assetCount,
     required this.tileHeight,
     required this.spacing,
+    required this.columnCount,
   });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final isScrubbing = ref.watch(timelineStateProvider.select((s) => s.isScrubbing));
-    final timelineService = ref.read(timelineServiceProvider);
+    final recommendDeferredLoading = ref.watch(timelineStateProvider.select((s) => s.recommendDeferredLoading));
+    final timelineService = ref.watch(timelineServiceProvider);
+    final isDynamicLayout = columnCount <= (context.isMobile ? 2 : 3);
 
-    if (isScrubbing) {
-      return _buildPlaceholder(context);
-    }
     if (timelineService.hasRange(assetIndex, assetCount)) {
-      return _buildAssetRow(context, timelineService.getAssets(assetIndex, assetCount), timelineService);
+      return _buildAssetRow(
+        context,
+        timelineService.getAssets(assetIndex, assetCount),
+        timelineService,
+        isDynamicLayout,
+      );
+    }
+
+    if (recommendDeferredLoading) {
+      return _buildPlaceholder(context);
     }
 
     return FutureBuilder<List<BaseAsset>>(
@@ -113,7 +129,7 @@ class _FixedSegmentRow extends ConsumerWidget {
         if (snapshot.connectionState != ConnectionState.done) {
           return _buildPlaceholder(context);
         }
-        return _buildAssetRow(context, snapshot.requireData, timelineService);
+        return _buildAssetRow(context, snapshot.requireData, timelineService, isDynamicLayout);
       },
     );
   }
@@ -122,23 +138,63 @@ class _FixedSegmentRow extends ConsumerWidget {
     return SegmentBuilder.buildPlaceholder(context, assetCount, size: Size.square(tileHeight), spacing: spacing);
   }
 
-  Widget _buildAssetRow(BuildContext context, List<BaseAsset> assets, TimelineService timelineService) {
-    return FixedTimelineRow(
-      dimension: tileHeight,
-      spacing: spacing,
-      textDirection: Directionality.of(context),
-      children: [
-        for (int i = 0; i < assets.length; i++)
-          TimelineAssetIndexWrapper(
+  Widget _buildAssetRow(
+    BuildContext context,
+    List<BaseAsset> assets,
+    TimelineService timelineService,
+    bool isDynamicLayout,
+  ) {
+    final widths = List.filled(assets.length, tileHeight);
+
+    if (isDynamicLayout) {
+      final aspectRatios = assets.map((e) => (e.width ?? 1) / (e.height ?? 1)).toList();
+      final meanAspectRatio = aspectRatios.sum / assets.length;
+
+      // 1: mean width
+      // 0.5: width < mean - threshold
+      // 1.5: width > mean + threshold
+      final arConfiguration = aspectRatios.map((e) {
+        if (e - meanAspectRatio > 0.3) {
+          return 1.5;
+        }
+        if (e - meanAspectRatio < -0.3) {
+          return 0.5;
+        }
+        return 1.0;
+      });
+
+      // Normalize to get width distribution
+      final sum = arConfiguration.sum;
+
+      int index = 0;
+      for (final ratio in arConfiguration) {
+        // Distribute the available width proportionally based on aspect ratio configuration
+        widths[index++] = ((ratio * assets.length) / sum) * tileHeight;
+      }
+    }
+
+    final children = [
+      for (int i = 0; i < assets.length; i++)
+        TimelineAssetIndexWrapper(
+          assetIndex: assetIndex + i,
+          segmentIndex: 0, // For simplicity, using 0 for now
+          child: _AssetTileWidget(
+            key: ValueKey(Object.hash(assets[i].heroTag, assetIndex + i, timelineService.hashCode)),
+            asset: assets[i],
             assetIndex: assetIndex + i,
-            segmentIndex: 0, // For simplicity, using 0 for now
-            child: _AssetTileWidget(
-              key: ValueKey(Object.hash(assets[i].heroTag, assetIndex + i, timelineService.hashCode)),
-              asset: assets[i],
-              assetIndex: assetIndex + i,
-            ),
+            size: Size(widths[i], tileHeight),
           ),
-      ],
+        ),
+    ];
+
+    return TimelineDragRegion(
+      child: TimelineRow(
+        height: tileHeight,
+        widths: widths,
+        spacing: spacing,
+        textDirection: Directionality.of(context),
+        children: children,
+      ),
     );
   }
 }
@@ -146,18 +202,30 @@ class _FixedSegmentRow extends ConsumerWidget {
 class _AssetTileWidget extends ConsumerWidget {
   final BaseAsset asset;
   final int assetIndex;
+  final Size size;
 
-  const _AssetTileWidget({super.key, required this.asset, required this.assetIndex});
+  const _AssetTileWidget({super.key, required this.asset, required this.assetIndex, required this.size});
 
-  Future _handleOnTap(BuildContext ctx, WidgetRef ref, int assetIndex, BaseAsset asset, int? heroOffset) async {
+  Future _handleOnTap(
+    BuildContext ctx,
+    WidgetRef ref,
+    int assetIndex,
+    BaseAsset asset,
+    int? heroOffset,
+    Size remoteSize,
+  ) async {
     final multiSelectState = ref.read(multiSelectProvider);
 
     if (multiSelectState.forceEnable || multiSelectState.isEnabled) {
       ref.read(multiSelectProvider.notifier).toggleAssetSelection(asset);
     } else {
       await ref.read(timelineServiceProvider).loadAssets(assetIndex, 1);
+      if (!ctx.mounted) {
+        return;
+      }
+
       ref.read(isPlayingMotionVideoProvider.notifier).playing = false;
-      AssetViewer.setAsset(ref, asset);
+      AssetViewer.setAsset(ref, asset, thumbnailSize: remoteSize);
       unawaited(
         ctx.pushRoute(
           AssetViewerRoute(
@@ -188,25 +256,34 @@ class _AssetTileWidget extends ConsumerWidget {
       return false;
     }
 
-    return lockSelectionAssets.contains(asset);
+    // Iterate with `==` instead of `Set.contains` because `RemoteAsset.hashCode`
+    // includes `localId` while `==` does not — so the same server asset can
+    // hash to a different bucket when its `localId` differs (e.g., album-fetched
+    // copy has localId=null, merged-timeline copy has it populated).
+    return lockSelectionAssets.any((a) => a == asset);
   }
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final remoteSize = size * MediaQuery.devicePixelRatioOf(context);
+
     final heroOffset = TabsRouterScope.of(context)?.controller.activeIndex ?? 0;
 
     final lockSelection = _getLockSelectionStatus(ref);
     final showStorageIndicator = ref.watch(timelineArgsProvider.select((args) => args.showStorageIndicator));
     final isReadonlyModeEnabled = ref.watch(readonlyModeProvider);
+    final showStackIndicator = ref.watch(timelineServiceProvider).origin != TimelineOrigin.trash;
 
     return RepaintBoundary(
       child: GestureDetector(
-        onTap: () => lockSelection ? null : _handleOnTap(context, ref, assetIndex, asset, heroOffset),
+        onTap: () => lockSelection ? null : _handleOnTap(context, ref, assetIndex, asset, heroOffset, remoteSize),
         onLongPress: () => lockSelection || isReadonlyModeEnabled ? null : _handleOnLongPress(ref, asset),
         child: ThumbnailTile(
           asset,
+          remoteSize: remoteSize,
           lockSelection: lockSelection,
           showStorageIndicator: showStorageIndicator,
+          showStackIndicator: showStackIndicator,
           heroOffset: heroOffset,
         ),
       ),

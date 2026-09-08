@@ -1,4 +1,4 @@
-import { HttpException, StreamableFile } from '@nestjs/common';
+import { HttpException, NotFoundException, StreamableFile } from '@nestjs/common';
 import { NextFunction, Response } from 'express';
 import { access, constants } from 'node:fs/promises';
 import { basename, extname } from 'node:path';
@@ -9,15 +9,19 @@ import { ImmichReadStream } from 'src/repositories/storage.repository';
 import { isConnectionAborted } from 'src/utils/misc';
 
 export function getFileNameWithoutExtension(path: string): string {
-  return basename(path, extname(path));
+  return basename(path, getFilenameExtension(path));
 }
 
-export function getFilenameExtension(path: string): string {
-  return extname(path);
+export function getFilenameExtension(path: string) {
+  const extension = extname(path);
+  if (!extension && path.startsWith('.') && !path.includes('.', 1)) {
+    return path;
+  }
+  return extension;
 }
 
 export function getLivePhotoMotionFilename(stillName: string, motionName: string) {
-  return getFileNameWithoutExtension(stillName) + extname(motionName);
+  return getFileNameWithoutExtension(stillName) + getFilenameExtension(motionName);
 }
 
 export class ImmichFileResponse {
@@ -34,7 +38,8 @@ type SendFile = Parameters<Response['sendFile']>;
 type SendFileOptions = SendFile[1];
 
 const cacheControlHeaders: Record<CacheControl, string | null> = {
-  [CacheControl.PrivateWithCache]: 'private, max-age=86400, no-transform',
+  [CacheControl.PrivateWithCache]:
+    'private, max-age=86400, no-transform, stale-while-revalidate=2592000, stale-if-error=2592000',
   [CacheControl.PrivateWithoutCache]: 'private, no-cache, no-transform',
   [CacheControl.None]: null, // falsy value to prevent adding Cache-Control header
 };
@@ -42,7 +47,7 @@ const cacheControlHeaders: Record<CacheControl, string | null> = {
 export const sendFile = async (
   res: Response,
   next: NextFunction,
-  handler: () => Promise<ImmichFileResponse>,
+  handler: () => Promise<ImmichFileResponse> | ImmichFileResponse,
   logger: LoggingRepository,
 ): Promise<void> => {
   // promisified version of 'res.sendFile' for cleaner async handling
@@ -51,6 +56,9 @@ export const sendFile = async (
 
   try {
     const file = await handler();
+
+    await access(file.path, constants.R_OK);
+
     const cacheControlHeader = cacheControlHeaders[file.cacheControl];
     if (cacheControlHeader) {
       // set the header to Cache-Control
@@ -62,8 +70,6 @@ export const sendFile = async (
       res.header('Content-Disposition', `inline; filename*=UTF-8''${encodeURIComponent(file.fileName)}`);
     }
 
-    await access(file.path, constants.R_OK);
-
     return await _sendFile(file.path, { dotfiles: 'allow' });
   } catch (error: Error | any) {
     // ignore client-closed connection
@@ -72,15 +78,14 @@ export const sendFile = async (
     }
 
     // log non-http errors
-    if (error instanceof HttpException === false) {
+    if (!(error instanceof HttpException)) {
       logger.error(`Unable to send file: ${error}`, error.stack);
     }
 
-    res.header('Cache-Control', 'none');
-    next(error);
+    next(new NotFoundException());
   }
 };
 
-export const asStreamableFile = ({ stream, type, length }: ImmichReadStream) => {
-  return new StreamableFile(stream, { type, length });
+export const asStreamableFile = ({ stream, type, disposition, length }: ImmichReadStream) => {
+  return new StreamableFile(stream, { type, disposition, length });
 };

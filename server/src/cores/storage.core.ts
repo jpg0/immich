@@ -1,7 +1,15 @@
-import { randomUUID } from 'node:crypto';
 import { dirname, join, resolve } from 'node:path';
 import { StorageAsset } from 'src/database';
-import { AssetFileType, AssetPathType, ImageFormat, PathType, PersonPathType, StorageFolder } from 'src/enum';
+import {
+  AssetFileType,
+  AssetPathType,
+  ImageFormat,
+  PathType,
+  PersonPathType,
+  RawExtractedFormat,
+  StorageFolder,
+  UserPathType,
+} from 'src/enum';
 import { AssetRepository } from 'src/repositories/asset.repository';
 import { ConfigRepository } from 'src/repositories/config.repository';
 import { CryptoRepository } from 'src/repositories/crypto.repository';
@@ -10,11 +18,14 @@ import { MoveRepository } from 'src/repositories/move.repository';
 import { PersonRepository } from 'src/repositories/person.repository';
 import { StorageRepository } from 'src/repositories/storage.repository';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository';
+import { VideoInterfaces } from 'src/types';
 import { getAssetFile } from 'src/utils/asset.util';
 import { getConfig } from 'src/utils/config';
 
 export interface MoveRequest {
   entityId: string;
+  /** a person is owned, so the owner is needed to save the new path */
+  ownerId?: string;
   pathType: PathType;
   oldPath: string | null;
   newPath: string;
@@ -24,10 +35,15 @@ export interface MoveRequest {
   };
 }
 
-export type GeneratedImageType = AssetPathType.Preview | AssetPathType.Thumbnail | AssetPathType.FullSize;
-export type GeneratedAssetType = GeneratedImageType | AssetPathType.EncodedVideo;
-
 export type ThumbnailPathEntity = { id: string; ownerId: string };
+
+export type PersonThumbnailPathEntity = { personGroupId: string; ownerId: string };
+
+export type HlsSessionFolder = { ownerId: string; sessionId: string };
+
+export type HlsVariantFolder = { ownerId: string; sessionId: string; variantIndex: number };
+
+export type ImagePathOptions = { fileType: AssetFileType; format: ImageFormat | RawExtractedFormat; isEdited: boolean };
 
 let instance: StorageCore | null;
 
@@ -101,16 +117,28 @@ export class StorageCore {
     return join(StorageCore.getMediaLocation(), folder);
   }
 
-  static getPersonThumbnailPath(person: ThumbnailPathEntity) {
-    return StorageCore.getNestedPath(StorageFolder.Thumbnails, person.ownerId, `${person.id}.jpeg`);
+  static getPersonThumbnailPath(person: PersonThumbnailPathEntity) {
+    return StorageCore.getNestedPath(StorageFolder.Thumbnails, person.ownerId, `${person.personGroupId}.jpeg`);
   }
 
-  static getImagePath(asset: ThumbnailPathEntity, type: GeneratedImageType, format: 'jpeg' | 'webp') {
-    return StorageCore.getNestedPath(StorageFolder.Thumbnails, asset.ownerId, `${asset.id}-${type}.${format}`);
+  static getImagePath(asset: ThumbnailPathEntity, { fileType, format, isEdited }: ImagePathOptions) {
+    return StorageCore.getNestedPath(
+      StorageFolder.Thumbnails,
+      asset.ownerId,
+      `${asset.id}_${fileType}${isEdited ? '_edited' : ''}.${format}`,
+    );
   }
 
   static getEncodedVideoPath(asset: ThumbnailPathEntity) {
     return StorageCore.getNestedPath(StorageFolder.EncodedVideo, asset.ownerId, `${asset.id}.mp4`);
+  }
+
+  static getHlsSessionFolder({ ownerId, sessionId }: HlsSessionFolder) {
+    return StorageCore.getNestedPath(StorageFolder.EncodedVideo, ownerId, sessionId);
+  }
+
+  static getHlsVariantFolder({ ownerId, sessionId, variantIndex }: HlsVariantFolder) {
+    return join(StorageCore.getHlsSessionFolder({ ownerId, sessionId }), variantIndex.toString());
   }
 
   static getAndroidMotionPath(asset: ThumbnailPathEntity, uuid: string) {
@@ -131,32 +159,34 @@ export class StorageCore {
     return normalizedPath.startsWith(normalizedAppMediaLocation);
   }
 
-  async moveAssetImage(asset: StorageAsset, pathType: GeneratedImageType, format: ImageFormat) {
+  async moveAssetImage(asset: StorageAsset, fileType: AssetFileType, format: ImageFormat) {
     const { id: entityId, files } = asset;
-    const oldFile = getAssetFile(files, pathType);
+    const oldFile = getAssetFile(files, fileType, { isEdited: false });
     return this.moveFile({
       entityId,
-      pathType,
+      pathType: fileType,
       oldPath: oldFile?.path || null,
-      newPath: StorageCore.getImagePath(asset, pathType, format),
+      newPath: StorageCore.getImagePath(asset, { fileType, format, isEdited: false }),
     });
   }
 
   async moveAssetVideo(asset: StorageAsset) {
+    const encodedVideoFile = getAssetFile(asset.files, AssetFileType.EncodedVideo, { isEdited: false });
     return this.moveFile({
       entityId: asset.id,
       pathType: AssetPathType.EncodedVideo,
-      oldPath: asset.encodedVideoPath,
+      oldPath: encodedVideoFile?.path || null,
       newPath: StorageCore.getEncodedVideoPath(asset),
     });
   }
 
-  async movePersonFile(person: { id: string; ownerId: string; thumbnailPath: string }, pathType: PersonPathType) {
-    const { id: entityId, thumbnailPath } = person;
+  async movePersonFile(person: PersonThumbnailPathEntity & { thumbnailPath: string }, pathType: PersonPathType) {
+    const { ownerId, personGroupId, thumbnailPath } = person;
     switch (pathType) {
       case PersonPathType.Face: {
         await this.moveFile({
-          entityId,
+          entityId: personGroupId,
+          ownerId,
           pathType,
           oldPath: thumbnailPath,
           newPath: StorageCore.getPersonThumbnailPath(person),
@@ -166,7 +196,7 @@ export class StorageCore {
   }
 
   async moveFile(request: MoveRequest) {
-    const { entityId, pathType, oldPath, newPath, assetInfo } = request;
+    const { entityId, ownerId, pathType, oldPath, newPath, assetInfo } = request;
     if (!oldPath || oldPath === newPath) {
       return;
     }
@@ -176,20 +206,20 @@ export class StorageCore {
     let move = await this.moveRepository.getByEntity(entityId, pathType);
     if (move) {
       this.logger.log(`Attempting to finish incomplete move: ${move.oldPath} => ${move.newPath}`);
-      const oldPathExists = await this.storageRepository.checkFileExists(move.oldPath);
-      const newPathExists = await this.storageRepository.checkFileExists(move.newPath);
-      const newPathCheck = newPathExists ? move.newPath : null;
-      const actualPath = oldPathExists ? move.oldPath : newPathCheck;
+      const isOldPathExists = await this.storageRepository.checkFileExists(move.oldPath);
+      const isNewPathExists = await this.storageRepository.checkFileExists(move.newPath);
+      const newPathCheck = isNewPathExists ? move.newPath : null;
+      const actualPath = isOldPathExists ? move.oldPath : newPathCheck;
       if (!actualPath) {
         this.logger.warn('Unable to complete move. File does not exist at either location.');
         return;
       }
 
-      const fileAtNewLocation = actualPath === move.newPath;
-      this.logger.log(`Found file at ${fileAtNewLocation ? 'new' : 'old'} location`);
+      const isFileAtNewLocation = actualPath === move.newPath;
+      this.logger.log(`Found file at ${isFileAtNewLocation ? 'new' : 'old'} location`);
 
       if (
-        fileAtNewLocation &&
+        isFileAtNewLocation &&
         !(await this.verifyNewPathContentsMatchesExpected(move.oldPath, move.newPath, assetInfo))
       ) {
         this.logger.fatal(
@@ -239,7 +269,7 @@ export class StorageCore {
       }
     }
 
-    await this.savePath(pathType, entityId, newPath);
+    await this.savePath(pathType, entityId, newPath, ownerId);
     await this.moveRepository.delete(move.id);
   }
 
@@ -287,28 +317,38 @@ export class StorageCore {
     return this.storageRepository.removeEmptyDirs(StorageCore.getBaseFolder(folder));
   }
 
-  private savePath(pathType: PathType, id: string, newPath: string) {
+  async getVideoInterfaces(): Promise<VideoInterfaces> {
+    const [dri, mali] = await Promise.all([this.getDevices(), this.hasMaliOpenCL()]);
+    return { dri, mali };
+  }
+
+  private savePath(pathType: PathType, id: string, newPath: string, ownerId?: string) {
     switch (pathType) {
       case AssetPathType.Original: {
         return this.assetRepository.update({ id, originalPath: newPath });
       }
-      case AssetPathType.FullSize: {
-        return this.assetRepository.upsertFile({ assetId: id, type: AssetFileType.FullSize, path: newPath });
-      }
-      case AssetPathType.Preview: {
-        return this.assetRepository.upsertFile({ assetId: id, type: AssetFileType.Preview, path: newPath });
-      }
-      case AssetPathType.Thumbnail: {
-        return this.assetRepository.upsertFile({ assetId: id, type: AssetFileType.Thumbnail, path: newPath });
-      }
+
+      case AssetFileType.FullSize:
+      case AssetFileType.EncodedVideo:
+      case AssetFileType.Thumbnail:
+      case AssetFileType.Preview:
+      case AssetFileType.Sidecar:
       case AssetPathType.EncodedVideo: {
-        return this.assetRepository.update({ id, encodedVideoPath: newPath });
+        return this.assetRepository.upsertFile({ assetId: id, type: pathType as AssetFileType, path: newPath });
       }
-      case AssetPathType.Sidecar: {
-        return this.assetRepository.update({ id, sidecarPath: newPath });
-      }
+
       case PersonPathType.Face: {
-        return this.personRepository.update({ id, thumbnailPath: newPath });
+        if (!ownerId) {
+          this.logger.warn('Unable to save person path without an owner');
+          return;
+        }
+
+        return this.personRepository.update({ ownerId, personGroupId: id, thumbnailPath: newPath });
+      }
+
+      case UserPathType.Profile: {
+        this.logger.warn('Unexpected path type:', pathType);
+        return;
       }
     }
   }
@@ -318,10 +358,28 @@ export class StorageCore {
   }
 
   static getNestedPath(folder: StorageFolder, ownerId: string, filename: string): string {
-    return join(this.getNestedFolder(folder, ownerId, filename), filename);
+    return join(StorageCore.getNestedFolder(folder, ownerId, filename), filename);
   }
 
-  static getTempPathInDir(dir: string): string {
-    return join(dir, `${randomUUID()}.tmp`);
+  private async getDevices() {
+    try {
+      return await this.storageRepository.readdir('/dev/dri');
+    } catch {
+      this.logger.debug('No devices found in /dev/dri.');
+      return [];
+    }
+  }
+
+  private async hasMaliOpenCL() {
+    try {
+      const [maliIcdStat, maliDeviceStat] = await Promise.all([
+        this.storageRepository.stat('/etc/OpenCL/vendors/mali.icd'),
+        this.storageRepository.stat('/dev/mali0'),
+      ]);
+      return maliIcdStat.isFile() && maliDeviceStat.isCharacterDevice();
+    } catch {
+      this.logger.debug('OpenCL not available for transcoding, so RKMPP acceleration will use CPU tonemapping');
+      return false;
+    }
   }
 }

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 from pathlib import Path
+from threading import Lock
 from typing import Any
 
 import numpy as np
@@ -8,9 +10,38 @@ import onnxruntime as ort
 from numpy.typing import NDArray
 
 from immich_ml.models.constants import SUPPORTED_PROVIDERS
-from immich_ml.schemas import SessionNode
+from immich_ml.schemas import ModelPrecision, SessionNode
 
 from ..config import log, settings
+
+MigraphxInputSignature = tuple[tuple[str, str, tuple[int, ...]], ...]
+
+_migraphx_registry_lock = Lock()
+_migraphx_model_locks: dict[str, Lock] = {}
+_migraphx_compiled_inputs: set[tuple[str, MigraphxInputSignature]] = set()
+
+
+def _migraphx_get_model_lock(model_key: str) -> Lock:
+    with _migraphx_registry_lock:
+        lock = _migraphx_model_locks.get(model_key)
+        if lock is None:
+            lock = Lock()
+            _migraphx_model_locks[model_key] = lock
+        return lock
+
+
+def _migraphx_has_compiled_input(key: tuple[str, MigraphxInputSignature]) -> bool:
+    with _migraphx_registry_lock:
+        return key in _migraphx_compiled_inputs
+
+
+def _migraphx_mark_compiled_input(key: tuple[str, MigraphxInputSignature]) -> None:
+    with _migraphx_registry_lock:
+        _migraphx_compiled_inputs.add(key)
+
+
+def _migraphx_input_signature(input_feed: dict[str, NDArray[Any]]) -> MigraphxInputSignature:
+    return tuple((name, str(value.dtype), tuple(value.shape)) for name, value in sorted(input_feed.items()))
 
 
 class OrtSession:
@@ -34,21 +65,39 @@ class OrtSession:
             sess_options=self.sess_options,
         )
 
-    def get_inputs(self) -> list[SessionNode]:
-        inputs: list[SessionNode] = self.session.get_inputs()
+    def get_inputs(self) -> Sequence[SessionNode]:
+        inputs: Sequence[SessionNode] = self.session.get_inputs()
         return inputs
 
-    def get_outputs(self) -> list[SessionNode]:
-        outputs: list[SessionNode] = self.session.get_outputs()
+    def get_outputs(self) -> Sequence[SessionNode]:
+        outputs: Sequence[SessionNode] = self.session.get_outputs()
         return outputs
+
+    def get_metadata(self) -> dict[str, str]:
+        metadata: dict[str, str] = self.session.get_modelmeta().custom_metadata_map
+        return metadata
 
     def run(
         self,
         output_names: list[str] | None,
-        input_feed: dict[str, NDArray[np.float32]] | dict[str, NDArray[np.int32]],
+        input_feed: dict[str, NDArray[np.float32]] | dict[str, NDArray[np.int32]] | dict[str, NDArray[np.uint8]],
         run_options: Any = None,
     ) -> list[NDArray[np.float32]]:
-        outputs: list[NDArray[np.float32]] = self.session.run(output_names, input_feed, run_options)
+        if "MIGraphXExecutionProvider" in self.providers:
+            model_key = self.model_path.resolve().as_posix()
+            input_key = (model_key, _migraphx_input_signature(input_feed))
+            if not _migraphx_has_compiled_input(input_key):
+                model_lock = _migraphx_get_model_lock(model_key)
+                with model_lock:
+                    if not _migraphx_has_compiled_input(input_key):
+                        outputs: list[NDArray[np.float32]] = self.session.run(output_names, input_feed, run_options)
+                        _migraphx_mark_compiled_input(input_key)
+                        return outputs
+
+            outputs = self.session.run(output_names, input_feed, run_options)
+            return outputs
+
+        outputs = self.session.run(output_names, input_feed, run_options)
         return outputs
 
     @property
@@ -64,14 +113,6 @@ class OrtSession:
     def _providers_default(self) -> list[str]:
         available_providers = set(ort.get_available_providers())
         log.debug(f"Available ORT providers: {available_providers}")
-        if (openvino := "OpenVINOExecutionProvider") in available_providers:
-            device_ids: list[str] = ort.capi._pybind_state.get_available_openvino_device_ids()
-            log.debug(f"Available OpenVINO devices: {device_ids}")
-
-            gpu_devices = [device_id for device_id in device_ids if device_id.startswith("GPU")]
-            if not gpu_devices:
-                log.warning("No GPU device found in OpenVINO. Falling back to CPU.")
-                available_providers.remove(openvino)
         return [provider for provider in SUPPORTED_PROVIDERS if provider in available_providers]
 
     @property
@@ -90,12 +131,30 @@ class OrtSession:
             match provider:
                 case "CPUExecutionProvider":
                     options = {"arena_extend_strategy": "kSameAsRequested"}
-                case "CUDAExecutionProvider" | "ROCMExecutionProvider":
+                case "CUDAExecutionProvider":
                     options = {"arena_extend_strategy": "kSameAsRequested", "device_id": settings.device_id}
-                case "OpenVINOExecutionProvider":
+                case "MIGraphXExecutionProvider":
+                    migraphx_dir = self.model_path.parent / "migraphx"
+                    # MIGraphX does not create the underlying folder and will crash if it does not exist
+                    migraphx_dir.mkdir(parents=True, exist_ok=True)
                     options = {
-                        "device_type": f"GPU.{settings.device_id}",
-                        "precision": "FP32",
+                        "device_id": settings.device_id,
+                        "migraphx_model_cache_dir": migraphx_dir.as_posix(),
+                        "migraphx_fp16_enable": "1" if settings.rocm_precision == ModelPrecision.FP16 else "0",
+                    }
+                case "OpenVINOExecutionProvider":
+                    device_ids: list[str] = ort.capi._pybind_state.get_available_openvino_device_ids()
+                    # Check for available devices, preferring GPU over CPU
+                    gpu_devices = [d for d in device_ids if d.startswith("GPU")]
+                    if gpu_devices:
+                        device_type = f"GPU.{settings.device_id}"
+                        log.debug(f"OpenVINO: Using GPU device {device_type}")
+                    else:
+                        device_type = "CPU"
+                        log.debug("OpenVINO: No GPU found, using CPU")
+                    options = {
+                        "device_type": device_type,
+                        "precision": settings.openvino_precision.value,
                         "cache_dir": (self.model_path.parent / "openvino").as_posix(),
                     }
                 case "CoreMLExecutionProvider":
@@ -128,12 +187,14 @@ class OrtSession:
         sess_options.enable_cpu_mem_arena = settings.model_arena
 
         # avoid thread contention between models
+        # Set inter_op threads
         if settings.model_inter_op_threads > 0:
             sess_options.inter_op_num_threads = settings.model_inter_op_threads
         # these defaults work well for CPU, but bottleneck GPU
         elif settings.model_inter_op_threads == 0 and self.providers == ["CPUExecutionProvider"]:
             sess_options.inter_op_num_threads = 1
 
+        # Set intra_op threads
         if settings.model_intra_op_threads > 0:
             sess_options.intra_op_num_threads = settings.model_intra_op_threads
         elif settings.model_intra_op_threads == 0 and self.providers == ["CPUExecutionProvider"]:

@@ -1,17 +1,26 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
+import 'package:immich_mobile/domain/models/server_capability.model.dart';
+import 'package:immich_mobile/domain/services/local_album.service.dart';
+import 'package:immich_mobile/domain/services/memory.service.dart';
 import 'package:immich_mobile/extensions/build_context_extensions.dart';
-import 'package:immich_mobile/extensions/translate_extensions.dart';
+import 'package:immich_mobile/extensions/platform_extensions.dart';
+import 'package:immich_mobile/generated/translations.g.dart';
+import 'package:immich_mobile/providers/app_settings.provider.dart';
 import 'package:immich_mobile/providers/background_sync.provider.dart';
 import 'package:immich_mobile/providers/infrastructure/album.provider.dart';
 import 'package:immich_mobile/providers/infrastructure/asset.provider.dart';
 import 'package:immich_mobile/providers/infrastructure/db.provider.dart';
-import 'package:immich_mobile/providers/infrastructure/memory.provider.dart';
 import 'package:immich_mobile/providers/infrastructure/storage.provider.dart';
+import 'package:immich_mobile/providers/infrastructure/trash_sync.provider.dart';
+import 'package:immich_mobile/providers/server_info.provider.dart';
 import 'package:immich_mobile/providers/sync_status.provider.dart';
+import 'package:immich_mobile/services/app_settings.service.dart';
 import 'package:immich_mobile/widgets/settings/beta_sync_settings/entity_count_tile.dart';
+import 'package:immich_ui/immich_ui.dart';
 import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
@@ -21,6 +30,8 @@ class SyncStatusAndActions extends HookConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final serverVersion = ref.watch(serverInfoProvider.select((value) => value.serverVersion));
+
     Future<void> exportDatabase() async {
       try {
         // WAL Checkpoint to ensure all changes are written to the database
@@ -28,12 +39,13 @@ class SyncStatusAndActions extends HookConsumerWidget {
         final documentsDir = await getApplicationDocumentsDirectory();
         final dbFile = File(path.join(documentsDir.path, 'immich.sqlite'));
 
+        // ignore: avoid_slow_async_io
         if (!await dbFile.exists()) {
-          if (context.mounted) {
-            context.scaffoldMessenger.showSnackBar(
-              SnackBar(content: Text("Database file not found".t(context: context))),
-            );
+          if (!context.mounted) {
+            return;
           }
+
+          context.scaffoldMessenger.showSnackBar(const SnackBar(content: Text('Database file not found')));
           return;
         }
 
@@ -41,6 +53,10 @@ class SyncStatusAndActions extends HookConsumerWidget {
         final exportFile = File(path.join(documentsDir.path, 'immich_export_$timestamp.sqlite'));
 
         await dbFile.copy(exportFile.path);
+
+        if (!context.mounted) {
+          return;
+        }
 
         final size = MediaQuery.of(context).size;
         await Share.shareXFiles(
@@ -50,22 +66,22 @@ class SyncStatusAndActions extends HookConsumerWidget {
         );
 
         Future.delayed(const Duration(seconds: 30), () async {
+          // ignore: avoid_slow_async_io
           if (await exportFile.exists()) {
             await exportFile.delete();
           }
         });
+        if (!context.mounted) {
+          return;
+        }
 
-        if (context.mounted) {
-          context.scaffoldMessenger.showSnackBar(
-            SnackBar(content: Text("Database exported successfully".t(context: context))),
-          );
-        }
+        context.scaffoldMessenger.showSnackBar(const SnackBar(content: Text('Database exported successfully')));
       } catch (e) {
-        if (context.mounted) {
-          context.scaffoldMessenger.showSnackBar(
-            SnackBar(content: Text("Failed to export database: $e".t(context: context))),
-          );
+        if (!context.mounted) {
+          return;
         }
+
+        context.scaffoldMessenger.showSnackBar(SnackBar(content: Text('Failed to export database: $e')));
       }
     }
 
@@ -78,25 +94,31 @@ class SyncStatusAndActions extends HookConsumerWidget {
         context: context,
         builder: (context) {
           return AlertDialog(
-            title: Text("reset_sqlite".t(context: context)),
-            content: Text("reset_sqlite_confirmation".t(context: context)),
+            title: Text(context.t.reset_sqlite),
+            content: Text(context.t.reset_sqlite_confirmation),
             actions: [
-              TextButton(
-                onPressed: () => context.pop(),
-                child: Text("cancel".t(context: context)),
-              ),
+              TextButton(onPressed: () => context.pop(), child: Text(context.t.cancel)),
               TextButton(
                 onPressed: () async {
                   await ref.read(driftProvider).reset();
+                  if (!context.mounted) {
+                    return;
+                  }
+
                   context.pop();
-                  context.scaffoldMessenger.showSnackBar(
-                    SnackBar(content: Text("reset_sqlite_success".t(context: context))),
+                  unawaited(
+                    showDialog<void>(
+                      context: context,
+                      barrierDismissible: false,
+                      builder: (ctx) => AlertDialog(
+                        title: Text(context.t.reset_sqlite_success),
+                        content: Text(context.t.reset_sqlite_done),
+                        actions: [TextButton(onPressed: () => ctx.pop(), child: Text(context.t.ok))],
+                      ),
+                    ),
                   );
                 },
-                child: Text(
-                  "confirm".t(context: context),
-                  style: TextStyle(color: context.colorScheme.error),
-                ),
+                child: Text(context.t.confirm, style: TextStyle(color: context.colorScheme.error)),
               ),
             ],
           );
@@ -104,82 +126,73 @@ class SyncStatusAndActions extends HookConsumerWidget {
       );
     }
 
-    return Padding(
-      padding: const EdgeInsets.only(top: 16, bottom: 32),
-      child: ListView(
-        children: [
-          const _SyncStatsCounts(),
-          const Divider(height: 1, indent: 16, endIndent: 16),
-          const SizedBox(height: 24),
-          _SectionHeaderText(text: "jobs".t(context: context)),
-          ListTile(
-            title: Text(
-              "sync_local".t(context: context),
-              style: const TextStyle(fontWeight: FontWeight.w500),
-            ),
-            subtitle: Text("tap_to_run_job".t(context: context)),
-            leading: const Icon(Icons.sync),
-            trailing: _SyncStatusIcon(status: ref.watch(syncStatusProvider).localSyncStatus),
-            onTap: () {
-              ref.read(backgroundSyncProvider).syncLocal(full: true);
-            },
+    return ListView(
+      padding: const EdgeInsets.only(top: 16, bottom: 96),
+      children: [
+        const _SyncStatsCounts(),
+        const Divider(height: 10),
+        const SizedBox(height: 16),
+        SettingGroupTitle(title: context.t.jobs),
+        SettingListTile(
+          title: context.t.sync_local,
+          subtitle: context.t.tap_to_run_job,
+          leading: const Icon(Icons.sync),
+          trailing: _SyncStatusIcon(status: ref.watch(syncStatusProvider).localSyncStatus),
+          onTap: () {
+            unawaited(ref.read(backgroundSyncProvider).syncLocal(full: true));
+          },
+        ),
+        SettingListTile(
+          title: context.t.sync_remote,
+          subtitle: context.t.tap_to_run_job,
+          leading: const Icon(Icons.cloud_sync),
+          trailing: _SyncStatusIcon(status: ref.watch(syncStatusProvider).remoteSyncStatus),
+          onTap: () {
+            unawaited(ref.read(backgroundSyncProvider).syncRemote());
+          },
+        ),
+        if (CurrentPlatform.isIOS && serverVersion.supports(.cloudIdMetadata))
+          SettingListTile(
+            title: 'Sync Cloud Ids',
+            leading: const Icon(Icons.cloud_circle_rounded),
+            subtitle: context.t.tap_to_run_job,
+            trailing: _SyncStatusIcon(status: ref.watch(syncStatusProvider).cloudIdSyncStatus),
+            onTap: ref.watch(backgroundSyncProvider).syncCloudIds,
           ),
-          ListTile(
-            title: Text(
-              "sync_remote".t(context: context),
-              style: const TextStyle(fontWeight: FontWeight.w500),
-            ),
-            subtitle: Text("tap_to_run_job".t(context: context)),
-            leading: const Icon(Icons.cloud_sync),
-            trailing: _SyncStatusIcon(status: ref.watch(syncStatusProvider).remoteSyncStatus),
-            onTap: () {
-              ref.read(backgroundSyncProvider).syncRemote();
-            },
+        SettingListTile(
+          title: context.t.hash_asset,
+          leading: const Icon(Icons.tag),
+          subtitle: context.t.tap_to_run_job,
+          trailing: _SyncStatusIcon(status: ref.watch(syncStatusProvider).hashJobStatus),
+          onTap: () {
+            unawaited(ref.read(backgroundSyncProvider).hashAssets());
+          },
+        ),
+        const Divider(height: 1),
+        const SizedBox(height: 16),
+        SettingGroupTitle(title: context.t.actions),
+        ListTile(
+          title: Text(context.t.clear_file_cache, style: const TextStyle(fontWeight: FontWeight.w500)),
+          leading: const Icon(Icons.playlist_remove_rounded),
+          onTap: clearFileCache,
+        ),
+        ListTile(
+          title: Text(context.t.export_database, style: const TextStyle(fontWeight: FontWeight.w500)),
+          subtitle: Text(context.t.export_database_description),
+          leading: const Icon(Icons.download),
+          onTap: exportDatabase,
+        ),
+        ListTile(
+          title: Text(
+            context.t.reset_sqlite,
+            style: TextStyle(color: context.colorScheme.error, fontWeight: FontWeight.w500),
           ),
-          ListTile(
-            title: Text(
-              "hash_asset".t(context: context),
-              style: const TextStyle(fontWeight: FontWeight.w500),
-            ),
-            leading: const Icon(Icons.tag),
-            subtitle: Text("tap_to_run_job".t(context: context)),
-            trailing: _SyncStatusIcon(status: ref.watch(syncStatusProvider).hashJobStatus),
-            onTap: () {
-              ref.read(backgroundSyncProvider).hashAssets();
-            },
-          ),
-          const Divider(height: 1, indent: 16, endIndent: 16),
-          const SizedBox(height: 24),
-          _SectionHeaderText(text: "actions".t(context: context)),
-          ListTile(
-            title: Text(
-              "clear_file_cache".t(context: context),
-              style: const TextStyle(fontWeight: FontWeight.w500),
-            ),
-            leading: const Icon(Icons.playlist_remove_rounded),
-            onTap: clearFileCache,
-          ),
-          ListTile(
-            title: Text(
-              "export_database".t(context: context),
-              style: const TextStyle(fontWeight: FontWeight.w500),
-            ),
-            subtitle: Text("export_database_description".t(context: context)),
-            leading: const Icon(Icons.download),
-            onTap: exportDatabase,
-          ),
-          ListTile(
-            title: Text(
-              "reset_sqlite".t(context: context),
-              style: TextStyle(color: context.colorScheme.error, fontWeight: FontWeight.w500),
-            ),
-            leading: Icon(Icons.settings_backup_restore_rounded, color: context.colorScheme.error),
-            onTap: () async {
-              await resetSqliteDb(context);
-            },
-          ),
-        ],
-      ),
+          leading: Icon(Icons.settings_backup_restore_rounded, color: context.colorScheme.error),
+          onTap: () async {
+            await resetSqliteDb(context);
+          },
+        ),
+      ],
     );
   }
 }
@@ -192,31 +205,11 @@ class _SyncStatusIcon extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return switch (status) {
-      SyncStatus.idle => const Icon(Icons.pause_circle_outline_rounded),
+      SyncStatus.idle => const SizedBox.shrink(),
       SyncStatus.syncing => const SizedBox(height: 24, width: 24, child: CircularProgressIndicator(strokeWidth: 2)),
       SyncStatus.success => const Icon(Icons.check_circle_outline, color: Colors.green),
       SyncStatus.error => Icon(Icons.error_outline, color: context.colorScheme.error),
     };
-  }
-}
-
-class _SectionHeaderText extends StatelessWidget {
-  final String text;
-
-  const _SectionHeaderText({required this.text});
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(left: 16.0),
-      child: Text(
-        text.toUpperCase(),
-        style: context.textTheme.labelLarge?.copyWith(
-          fontWeight: FontWeight.w500,
-          color: context.colorScheme.onSurface.withAlpha(200),
-        ),
-      ),
-    );
   }
 }
 
@@ -225,10 +218,12 @@ class _SyncStatsCounts extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final db = ref.watch(driftProvider);
     final assetService = ref.watch(assetServiceProvider);
-    final localAlbumService = ref.watch(localAlbumServiceProvider);
+    final localAlbumService = LocalAlbumService(db.localAlbumRepository);
     final remoteAlbumService = ref.watch(remoteAlbumServiceProvider);
-    final memoryService = ref.watch(driftMemoryServiceProvider);
+    final memoryService = MemoryService(db.memoryRepository);
+    final appSettingsService = ref.watch(appSettingsServiceProvider);
 
     Future<List<dynamic>> loadCounts() async {
       final assetCounts = assetService.getAssetCounts();
@@ -276,81 +271,105 @@ class _SyncStatsCounts extends ConsumerWidget {
           mainAxisAlignment: MainAxisAlignment.start,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _SectionHeaderText(text: "assets".t(context: context)),
+            SettingGroupTitle(title: context.t.assets),
             Padding(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-              child: Flex(
-                direction: Axis.horizontal,
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                spacing: 8.0,
-                children: [
-                  Expanded(
-                    child: EntitiyCountTile(
-                      label: "local".t(context: context),
-                      count: localAssetCount,
-                      icon: Icons.smartphone,
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+              // 1. Wrap in IntrinsicHeight
+              child: IntrinsicHeight(
+                child: Flex(
+                  direction: Axis.horizontal,
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  // 2. Stretch children vertically to fill the IntrinsicHeight
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  spacing: 8.0,
+                  children: [
+                    Expanded(
+                      child: EntityCountTile(label: context.t.local, count: localAssetCount, icon: Icons.smartphone),
                     ),
-                  ),
-                  Expanded(
-                    child: EntitiyCountTile(
-                      label: "remote".t(context: context),
-                      count: remoteAssetCount,
-                      icon: Icons.cloud,
+                    Expanded(
+                      child: EntityCountTile(label: context.t.remote, count: remoteAssetCount, icon: Icons.cloud),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
-            _SectionHeaderText(text: "albums".t(context: context)),
+            SettingGroupTitle(title: context.t.albums),
             Padding(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-              child: Flex(
-                direction: Axis.horizontal,
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                spacing: 8.0,
-                children: [
-                  Expanded(
-                    child: EntitiyCountTile(
-                      label: "local".t(context: context),
-                      count: localAlbumCount,
-                      icon: Icons.smartphone,
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+              child: IntrinsicHeight(
+                child: Flex(
+                  direction: Axis.horizontal,
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  crossAxisAlignment: CrossAxisAlignment.stretch, // Added
+                  spacing: 8.0,
+                  children: [
+                    Expanded(
+                      child: EntityCountTile(label: context.t.local, count: localAlbumCount, icon: Icons.smartphone),
                     ),
-                  ),
-                  Expanded(
-                    child: EntitiyCountTile(
-                      label: "remote".t(context: context),
-                      count: remoteAlbumCount,
-                      icon: Icons.cloud,
+                    Expanded(
+                      child: EntityCountTile(label: context.t.remote, count: remoteAlbumCount, icon: Icons.cloud),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
-            _SectionHeaderText(text: "other".t(context: context)),
+            SettingGroupTitle(title: context.t.other),
             Padding(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-              child: Flex(
-                direction: Axis.horizontal,
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                spacing: 8.0,
-                children: [
-                  Expanded(
-                    child: EntitiyCountTile(
-                      label: "memories".t(context: context),
-                      count: memoryCount,
-                      icon: Icons.calendar_today,
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+              child: IntrinsicHeight(
+                child: Flex(
+                  direction: Axis.horizontal,
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  crossAxisAlignment: CrossAxisAlignment.stretch, // Added
+                  spacing: 8.0,
+                  children: [
+                    Expanded(
+                      child: EntityCountTile(label: context.t.memories, count: memoryCount, icon: Icons.calendar_today),
                     ),
-                  ),
-                  Expanded(
-                    child: EntitiyCountTile(
-                      label: "hashed_assets".t(context: context),
-                      count: localHashedCount,
-                      icon: Icons.tag,
+                    Expanded(
+                      child: EntityCountTile(label: context.t.hashed_assets, count: localHashedCount, icon: Icons.tag),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
+            // To be removed once the experimental feature is stable
+            if (CurrentPlatform.isAndroid &&
+                appSettingsService.getSetting<bool>(AppSettingsEnum.manageLocalMediaAndroid)) ...[
+              SettingGroupTitle(title: context.t.trash),
+              Consumer(
+                builder: (context, ref, _) {
+                  final counts = ref.watch(trashedAssetsCountProvider);
+                  return counts.when(
+                    data: (c) => Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+                      child: IntrinsicHeight(
+                        child: Flex(
+                          direction: Axis.horizontal,
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          crossAxisAlignment: CrossAxisAlignment.stretch, // Added
+                          spacing: 8.0,
+                          children: [
+                            Expanded(
+                              child: EntityCountTile(
+                                label: context.t.local,
+                                count: c.total,
+                                icon: Icons.delete_outline,
+                              ),
+                            ),
+                            Expanded(
+                              child: EntityCountTile(label: context.t.hashed_assets, count: c.hashed, icon: Icons.tag),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    loading: () => const CircularProgressIndicator(),
+                    error: (e, st) => Text('Error: $e'),
+                  );
+                },
+              ),
+            ],
           ],
         );
       },

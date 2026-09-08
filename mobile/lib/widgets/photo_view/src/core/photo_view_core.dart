@@ -1,15 +1,17 @@
+import 'dart:async';
+
 import 'package:flutter/widgets.dart';
 import 'package:immich_mobile/widgets/photo_view/photo_view.dart'
     show
-        PhotoViewScaleState,
         PhotoViewHeroAttributes,
-        PhotoViewImageTapDownCallback,
-        PhotoViewImageTapUpCallback,
-        PhotoViewImageScaleEndCallback,
         PhotoViewImageDragEndCallback,
         PhotoViewImageDragStartCallback,
         PhotoViewImageDragUpdateCallback,
         PhotoViewImageLongPressStartCallback,
+        PhotoViewImageScaleEndCallback,
+        PhotoViewImageTapDownCallback,
+        PhotoViewImageTapUpCallback,
+        PhotoViewScaleState,
         ScaleStateCycle;
 import 'package:immich_mobile/widgets/photo_view/src/controller/photo_view_controller.dart';
 import 'package:immich_mobile/widgets/photo_view/src/controller/photo_view_controller_delegate.dart';
@@ -36,6 +38,7 @@ class PhotoViewCore extends StatefulWidget {
     required this.onDragStart,
     required this.onDragEnd,
     required this.onDragUpdate,
+    required this.onDragCancel,
     required this.onScaleEnd,
     required this.onLongPressStart,
     required this.gestureDetectorBehavior,
@@ -62,6 +65,7 @@ class PhotoViewCore extends StatefulWidget {
     this.onDragStart,
     this.onDragEnd,
     this.onDragUpdate,
+    this.onDragCancel,
     this.onScaleEnd,
     this.onLongPressStart,
     this.gestureDetectorBehavior,
@@ -100,6 +104,7 @@ class PhotoViewCore extends StatefulWidget {
   final PhotoViewImageDragStartCallback? onDragStart;
   final PhotoViewImageDragEndCallback? onDragEnd;
   final PhotoViewImageDragUpdateCallback? onDragUpdate;
+  final VoidCallback? onDragCancel;
 
   final PhotoViewImageLongPressStartCallback? onLongPressStart;
 
@@ -135,8 +140,6 @@ class PhotoViewCoreState extends State<PhotoViewCore>
   Animation<double>? _rotationAnimation;
 
   PhotoViewHeroAttributes? get heroAttributes => widget.heroAttributes;
-
-  late ScaleBoundaries cachedScaleBoundaries = widget.scaleBoundaries;
 
   void handleScaleAnimation() {
     scale = _scaleAnimation!.value;
@@ -200,7 +203,7 @@ class PhotoViewCoreState extends State<PhotoViewCore>
     } else if (scaleState == PhotoViewScaleState.zoomedIn) {
       animateRotation(controller.rotation, 0);
       if (_shouldAllowPanRotate()) {
-        animatePosition(controller.position, Offset.zero);
+        animatePosition(controller.position, clampPosition());
       }
     }
 
@@ -239,9 +242,8 @@ class PhotoViewCoreState extends State<PhotoViewCore>
       return;
     }
     _scaleAnimation = Tween<double>(begin: from, end: to).animate(_scaleAnimationController);
-    _scaleAnimationController
-      ..value = 0.0
-      ..fling(velocity: 0.4);
+    _scaleAnimationController.value = 0.0;
+    unawaited(_scaleAnimationController.fling(velocity: 0.4));
   }
 
   void animatePosition(Offset from, Offset to) {
@@ -249,9 +251,8 @@ class PhotoViewCoreState extends State<PhotoViewCore>
       return;
     }
     _positionAnimation = Tween<Offset>(begin: from, end: to).animate(_positionAnimationController);
-    _positionAnimationController
-      ..value = 0.0
-      ..fling(velocity: 0.4);
+    _positionAnimationController.value = 0.0;
+    unawaited(_positionAnimationController.fling(velocity: 0.4));
   }
 
   void animateRotation(double from, double to) {
@@ -259,9 +260,8 @@ class PhotoViewCoreState extends State<PhotoViewCore>
       return;
     }
     _rotationAnimation = Tween<double>(begin: from, end: to).animate(_rotationAnimationController);
-    _rotationAnimationController
-      ..value = 0.0
-      ..fling(velocity: 0.4);
+    _rotationAnimationController.value = 0.0;
+    unawaited(_rotationAnimationController.fling(velocity: 0.4));
   }
 
   void onAnimationStatus(AnimationStatus status) {
@@ -300,7 +300,7 @@ class PhotoViewCoreState extends State<PhotoViewCore>
     controller.scaleAnimationBuilder(_animateControllerScale);
     controller.rotationAnimationBuilder(_animateControllerRotation);
 
-    cachedScaleBoundaries = widget.scaleBoundaries;
+    _updateScaleBoundaries();
 
     _scaleAnimationController = AnimationController(vsync: this)
       ..addListener(handleScaleAnimation)
@@ -323,22 +323,29 @@ class PhotoViewCoreState extends State<PhotoViewCore>
     super.dispose();
   }
 
-  void onTapUp(TapUpDetails details) {
-    widget.onTapUp?.call(context, details, controller.value);
+  void _updateScaleBoundaries() {
+    final prev = controller.scaleBoundaries;
+    if (prev == widget.scaleBoundaries) {
+      return;
+    }
+
+    if (prev != null && controller.scale != null && prev.initialScale > 0) {
+      final ratio = widget.scaleBoundaries.initialScale / prev.initialScale;
+      controller.setScaleInvisibly(controller.scale! * ratio);
+    } else {
+      markNeedsScaleRecalc = true;
+    }
+    controller.scaleBoundaries = widget.scaleBoundaries;
   }
 
-  void onTapDown(TapDownDetails details) {
-    widget.onTapDown?.call(context, details, controller.value);
+  @override
+  void didUpdateWidget(PhotoViewCore oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _updateScaleBoundaries();
   }
 
   @override
   Widget build(BuildContext context) {
-    // Check if we need a recalc on the scale
-    if (widget.scaleBoundaries != cachedScaleBoundaries) {
-      markNeedsScaleRecalc = true;
-      cachedScaleBoundaries = widget.scaleBoundaries;
-    }
-
     return StreamBuilder(
       stream: controller.outputStateStream,
       initialData: controller.prevValue,
@@ -386,6 +393,7 @@ class PhotoViewCoreState extends State<PhotoViewCore>
             onDragUpdate: widget.onDragUpdate != null
                 ? (details) => widget.onDragUpdate!(context, details, widget.controller.value)
                 : null,
+            onDragCancel: widget.onDragCancel,
             hitDetector: this,
             onTapUp: widget.onTapUp != null ? (details) => widget.onTapUp!(context, details, value) : null,
             onTapDown: widget.onTapDown != null ? (details) => widget.onTapDown!(context, details, value) : null,
@@ -416,7 +424,11 @@ class PhotoViewCoreState extends State<PhotoViewCore>
 
   Widget _buildChild() {
     return widget.hasCustomChild
-        ? widget.customChild!
+        ? SizedBox(
+            width: scaleBoundaries.childSize.width * scale,
+            height: scaleBoundaries.childSize.height * scale,
+            child: widget.customChild,
+          )
         : Image(
             key: widget.heroAttributes?.tag != null ? ObjectKey(widget.heroAttributes!.tag) : null,
             image: widget.imageProvider!,
@@ -424,7 +436,7 @@ class PhotoViewCoreState extends State<PhotoViewCore>
             gaplessPlayback: widget.gaplessPlayback ?? false,
             filterQuality: widget.filterQuality,
             width: scaleBoundaries.childSize.width * scale,
-            fit: BoxFit.cover,
+            fit: BoxFit.contain,
             isAntiAlias: widget.filterQuality == FilterQuality.high,
           );
   }

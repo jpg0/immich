@@ -16,6 +16,12 @@ export class PartnerService extends BaseService {
       throw new BadRequestException(`Partner already exists`);
     }
 
+    const user = await this.userRepository.get(sharedWithId, {});
+    if (!user) {
+      this.logger.debug('Partner creation failed: user not found');
+      throw new BadRequestException('Invalid user');
+    }
+
     const partner = await this.partnerRepository.create(partnerId);
     return this.mapPartner(partner, PartnerDirection.SharedBy);
   }
@@ -49,9 +55,8 @@ export class PartnerService extends BaseService {
 
   private mapPartner(partner: Partner, direction: PartnerDirection): PartnerResponseDto {
     // this is opposite to return the non-me user of the "partner"
-    const user = mapUser(
-      direction === PartnerDirection.SharedBy ? partner.sharedWith : partner.sharedBy,
-    ) as PartnerResponseDto;
+    const sharedUser = direction === PartnerDirection.SharedBy ? partner.sharedWith : partner.sharedBy;
+    const user = mapUser(sharedUser);
 
     return { ...user, inTimeline: partner.inTimeline };
   }

@@ -1,3 +1,5 @@
+// ignore_for_file: avoid_slow_async_io
+
 import 'dart:io';
 
 import 'package:immich_mobile/domain/models/asset/base_asset.model.dart';
@@ -6,7 +8,9 @@ import 'package:logging/logging.dart';
 import 'package:photo_manager/photo_manager.dart';
 
 class StorageRepository {
-  const StorageRepository();
+  final log = Logger('StorageRepository');
+
+  StorageRepository();
 
   Future<File?> getFileForAsset(String assetId) async {
     File? file;
@@ -31,6 +35,7 @@ class StorageRepository {
     return file;
   }
 
+  // TODO(agg23): Unify these methods
   Future<File?> getMotionFileForAsset(LocalAsset asset) async {
     File? file;
     final log = Logger('StorageRepository');
@@ -80,6 +85,51 @@ class StorageRepository {
       );
     }
     return entity;
+  }
+
+  Future<bool> isAssetAvailableLocally(String assetId) async {
+    try {
+      final entity = await AssetEntity.fromId(assetId);
+      if (entity == null) {
+        log.warning("Cannot get AssetEntity for asset $assetId");
+        return false;
+      }
+
+      return await entity.isLocallyAvailable(isOrigin: true);
+    } catch (error, stackTrace) {
+      log.warning("Error checking if asset is locally available $assetId", error, stackTrace);
+      return false;
+    }
+  }
+
+  Future<File?> loadFileFromCloud(String assetId, {PMProgressHandler? progressHandler}) async {
+    try {
+      final entity = await AssetEntity.fromId(assetId);
+      if (entity == null) {
+        log.warning("Cannot get AssetEntity for asset $assetId");
+        return null;
+      }
+
+      return await entity.loadFile(progressHandler: progressHandler);
+    } catch (error, stackTrace) {
+      log.warning("Error loading file from cloud for asset $assetId", error, stackTrace);
+      return null;
+    }
+  }
+
+  Future<File?> loadMotionFileFromCloud(String assetId, {PMProgressHandler? progressHandler}) async {
+    try {
+      final entity = await AssetEntity.fromId(assetId);
+      if (entity == null) {
+        log.warning("Cannot get AssetEntity for asset $assetId");
+        return null;
+      }
+
+      return await entity.loadFile(withSubtype: true, progressHandler: progressHandler);
+    } catch (error, stackTrace) {
+      log.warning("Error loading motion file from cloud for asset $assetId", error, stackTrace);
+      return null;
+    }
   }
 
   Future<void> clearCache() async {

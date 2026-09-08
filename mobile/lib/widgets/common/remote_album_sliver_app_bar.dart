@@ -3,36 +3,34 @@ import 'dart:io';
 import 'dart:ui';
 
 import 'package:auto_route/auto_route.dart';
-import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:immich_mobile/domain/models/asset/base_asset.model.dart';
-import 'package:immich_mobile/domain/models/timeline.model.dart';
+import 'package:immich_mobile/domain/models/events.model.dart';
 import 'package:immich_mobile/domain/services/timeline.service.dart';
 import 'package:immich_mobile/domain/utils/event_stream.dart';
 import 'package:immich_mobile/extensions/build_context_extensions.dart';
 import 'package:immich_mobile/extensions/datetime_extensions.dart';
-import 'package:immich_mobile/extensions/translate_extensions.dart';
+import 'package:immich_mobile/generated/translations.g.dart';
 import 'package:immich_mobile/presentation/widgets/images/image_provider.dart';
 import 'package:immich_mobile/providers/infrastructure/current_album.provider.dart';
 import 'package:immich_mobile/providers/infrastructure/remote_album.provider.dart';
 import 'package:immich_mobile/providers/infrastructure/timeline.provider.dart';
 import 'package:immich_mobile/providers/timeline/multiselect.provider.dart';
+import 'package:immich_mobile/routing/router.dart';
 import 'package:immich_mobile/widgets/album/remote_album_shared_user_icons.dart';
 
 class RemoteAlbumSliverAppBar extends ConsumerStatefulWidget {
   const RemoteAlbumSliverAppBar({
     super.key,
     this.icon = Icons.camera,
-    this.onShowOptions,
-    this.onToggleAlbumOrder,
+    required this.kebabMenu,
     this.onEditTitle,
     this.onActivity,
   });
 
   final IconData icon;
-  final void Function()? onShowOptions;
-  final void Function()? onToggleAlbumOrder;
+  final Widget kebabMenu;
   final void Function()? onEditTitle;
   final void Function()? onActivity;
 
@@ -65,9 +63,9 @@ class _MesmerizingSliverAppBarState extends ConsumerState<RemoteAlbumSliverAppBa
       return const SliverToBoxAdapter(child: SizedBox.shrink());
     }
 
-    Color? actionIconColor = Color.lerp(Colors.white, context.primaryColor, _scrollProgress);
+    final Color? actionIconColor = Color.lerp(Colors.white, context.primaryColor, _scrollProgress);
 
-    List<Shadow> actionIconShadows = [
+    final List<Shadow> actionIconShadows = [
       if (_scrollProgress < 0.95)
         Shadow(offset: const Offset(0, 2), blurRadius: 5, color: Colors.black.withValues(alpha: 0.5))
       else
@@ -91,21 +89,16 @@ class _MesmerizingSliverAppBarState extends ConsumerState<RemoteAlbumSliverAppBa
               onPressed: () => context.maybePop(),
             ),
       actions: [
-        if (widget.onToggleAlbumOrder != null)
-          IconButton(
-            icon: Icon(Icons.swap_vert_rounded, color: actionIconColor, shadows: actionIconShadows),
-            onPressed: widget.onToggleAlbumOrder,
-          ),
+        IconButton(
+          onPressed: () => context.pushRoute(SlideshowRoute(timeline: ref.read(timelineServiceProvider))),
+          icon: Icon(Icons.slideshow_outlined, color: actionIconColor, shadows: actionIconShadows),
+        ),
         if (currentAlbum.isActivityEnabled && currentAlbum.isShared)
           IconButton(
             icon: Icon(Icons.chat_outlined, color: actionIconColor, shadows: actionIconShadows),
             onPressed: widget.onActivity,
           ),
-        if (widget.onShowOptions != null)
-          IconButton(
-            icon: Icon(Icons.more_vert, color: actionIconColor, shadows: actionIconShadows),
-            onPressed: widget.onShowOptions,
-          ),
+        widget.kebabMenu,
       ],
       title: Builder(
         builder: (context) {
@@ -178,7 +171,7 @@ class _ExpandedBackgroundState extends ConsumerState<_ExpandedBackground> with S
 
     Future.delayed(const Duration(milliseconds: 100), () {
       if (mounted) {
-        _slideController.forward();
+        unawaited(_slideController.forward());
       }
     });
   }
@@ -246,7 +239,6 @@ class _ExpandedBackgroundState extends ConsumerState<_ExpandedBackground> with S
                         DateRangeFormatting.formatDateRange(
                           dateRange.value!.$1.toLocal(),
                           dateRange.value!.$2.toLocal(),
-                          context.locale,
                         ),
                         style: const TextStyle(
                           color: Colors.white,
@@ -265,22 +257,9 @@ class _ExpandedBackgroundState extends ConsumerState<_ExpandedBackground> with S
                 ),
                 GestureDetector(
                   onTap: widget.onEditTitle,
-                  child: SizedBox(
-                    width: double.infinity,
-                    child: SingleChildScrollView(
-                      scrollDirection: Axis.horizontal,
-                      child: Text(
-                        currentAlbum.name,
-                        maxLines: 1,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 36,
-                          fontWeight: FontWeight.bold,
-                          letterSpacing: 0.5,
-                          shadows: [Shadow(offset: Offset(0, 2), blurRadius: 12, color: Colors.black54)],
-                        ),
-                      ),
-                    ),
+                  child: LayoutBuilder(
+                    builder: (context, constraints) =>
+                        _DynamicText(text: currentAlbum.name, maxWidth: constraints.maxWidth),
                   ),
                 ),
                 if (currentAlbum.description.isNotEmpty)
@@ -328,7 +307,7 @@ class _ItemCountTextState extends ConsumerState<_ItemCountText> {
 
   @override
   void dispose() {
-    _reloadSubscription?.cancel();
+    unawaited(_reloadSubscription?.cancel());
     super.dispose();
   }
 
@@ -337,7 +316,7 @@ class _ItemCountTextState extends ConsumerState<_ItemCountText> {
     final assetCount = ref.watch(timelineServiceProvider.select((s) => s.totalAssets));
 
     return Text(
-      'items_count'.t(context: context, args: {"count": assetCount}),
+      context.t.items_count(count: assetCount),
       style: context.textTheme.labelLarge?.copyWith(
         color: Colors.white,
         shadows: [const Shadow(offset: Offset(0, 2), blurRadius: 12, color: Colors.black87)],
@@ -409,13 +388,17 @@ class _RandomAssetBackgroundState extends State<_RandomAssetBackground> with Tic
 
   void _startAnimationCycle() {
     if (_isZoomingIn) {
-      _zoomController.forward().then((_) {
-        _loadNextAsset();
-      });
+      unawaited(
+        _zoomController.forward().then((_) {
+          unawaited(_loadNextAsset());
+        }),
+      );
     } else {
-      _zoomController.reverse().then((_) {
-        _loadNextAsset();
-      });
+      unawaited(
+        _zoomController.reverse().then((_) {
+          unawaited(_loadNextAsset());
+        }),
+      );
     }
   }
 
@@ -491,10 +474,8 @@ class _RandomAssetBackgroundState extends State<_RandomAssetBackground> with Tic
       builder: (context, child) {
         return Transform.scale(
           scale: _zoomAnimation.value,
-          filterQuality: Platform.isAndroid ? FilterQuality.low : null,
           child: Transform.translate(
             offset: _panAnimation.value,
-            filterQuality: Platform.isAndroid ? FilterQuality.low : null,
             child: Stack(
               fit: StackFit.expand,
               children: [
@@ -558,5 +539,48 @@ class _RandomAssetBackgroundState extends State<_RandomAssetBackground> with Tic
         );
       },
     );
+  }
+}
+
+class _DynamicText extends StatelessWidget {
+  final String text;
+  final double maxWidth;
+
+  const _DynamicText({required this.text, required this.maxWidth});
+
+  static const _baseTextStyle = TextStyle(
+    color: Colors.white,
+    fontWeight: FontWeight.bold,
+    letterSpacing: 0.5,
+    shadows: [Shadow(offset: Offset(0, 2), blurRadius: 12, color: Colors.black54)],
+    overflow: TextOverflow.ellipsis,
+  );
+
+  int _lineCount(double fontSize) {
+    final textPainter = TextPainter(
+      text: TextSpan(
+        text: text,
+        style: _baseTextStyle.copyWith(fontSize: fontSize),
+      ),
+      maxLines: 3,
+      textDirection: TextDirection.ltr,
+    )..layout(maxWidth: maxWidth);
+    return textPainter.computeLineMetrics().length;
+  }
+
+  double _fontSize() {
+    final fontSizes = [44.0, 36.0];
+    for (final fontSize in fontSizes) {
+      final lineCount = _lineCount(fontSize);
+      if (lineCount == 1) {
+        return fontSize;
+      }
+    }
+    return 28;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(text, style: _baseTextStyle.copyWith(fontSize: _fontSize()), maxLines: 3);
   }
 }

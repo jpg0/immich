@@ -1,14 +1,12 @@
 import { navigating } from '$app/stores';
-import { AppRoute, SessionStorageKey } from '$lib/constants';
+import { SessionStorageKey } from '$lib/constants';
 import { handlePromiseError } from '$lib/utils';
 
 interface Options {
   /**
-   * {@link AppRoute} for subpages that scroll state should be kept while visiting.
-   *
    * This must be kept the same in all subpages of this route for the scroll memory clearer to work.
    */
-  routeStartsWith: AppRoute;
+  routeStartsWith: string;
   /**
    * Function to clear additional data/state before scrolling (ex infinite scroll).
    */
@@ -54,7 +52,7 @@ export function scrollMemory(
       const newScroll = sessionStorage.getItem(SessionStorageKey.SCROLL_POSITION);
       if (newScroll) {
         node.scroll({
-          top: Number.parseFloat(newScroll),
+          top: Number(newScroll),
           behavior: 'instant',
         });
       }
@@ -73,10 +71,12 @@ export function scrollMemory(
 export function scrollMemoryClearer(_node: HTMLElement, { routeStartsWith, beforeClear }: Options) {
   const unsubscribeNavigating = navigating.subscribe((navigation) => {
     // Forget scroll position from main page if going somewhere else.
-    if (navigation?.to && !navigation?.to.url.pathname.startsWith(routeStartsWith)) {
-      beforeClear?.();
-      sessionStorage.removeItem(SessionStorageKey.SCROLL_POSITION);
+    if (!navigation?.to || navigation?.to.url.pathname.startsWith(routeStartsWith)) {
+      return;
     }
+
+    beforeClear?.();
+    sessionStorage.removeItem(SessionStorageKey.SCROLL_POSITION);
   });
 
   return {

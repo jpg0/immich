@@ -23,8 +23,8 @@ class ActivityApiRepository extends ApiRepository {
     final dto = ActivityCreateDto(
       albumId: albumId,
       type: type == ActivityType.comment ? ReactionType.comment : ReactionType.like,
-      assetId: assetId,
-      comment: comment,
+      assetId: assetId == null ? const Optional.absent() : Optional.present(assetId),
+      comment: comment == null ? const Optional.absent() : Optional.present(comment),
     );
     final response = await checkNull(_api.createActivity(dto));
     return _toActivity(response);
@@ -34,17 +34,12 @@ class ActivityApiRepository extends ApiRepository {
     return checkNull(_api.deleteActivity(id));
   }
 
-  Future<ActivityStats> getStats(String albumId, {String? assetId}) async {
-    final response = await checkNull(_api.getActivityStatistics(albumId, assetId: assetId));
-    return ActivityStats(comments: response.comments);
-  }
-
   static Activity _toActivity(ActivityResponseDto dto) => Activity(
     id: dto.id,
     createdAt: dto.createdAt,
     type: dto.type == ReactionType.comment ? ActivityType.comment : ActivityType.like,
     user: UserConverter.fromSimpleUserDto(dto.user),
     assetId: dto.assetId,
-    comment: dto.comment,
+    comment: dto.comment.orElse(null),
   );
 }

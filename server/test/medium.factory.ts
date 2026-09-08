@@ -1,14 +1,18 @@
-/* eslint-disable @typescript-eslint/no-unsafe-function-type */
 import { Insertable, Kysely } from 'kysely';
 import { DateTime } from 'luxon';
 import { createHash, randomBytes } from 'node:crypto';
+import { Stats } from 'node:fs';
+import { resolve } from 'node:path';
 import { Writable } from 'node:stream';
 import { AssetFace } from 'src/database';
 import { AuthDto, LoginResponseDto } from 'src/dtos/auth.dto';
+import { SystemConfig } from 'src/dtos/config.dto';
+import { AssetEditActionItem, AssetEditsCreateDto } from 'src/dtos/editing.dto';
 import {
   AlbumUserRole,
   AssetType,
   AssetVisibility,
+  ChecksumAlgorithm,
   MemoryType,
   SourceType,
   SyncEntityType,
@@ -18,21 +22,33 @@ import { AccessRepository } from 'src/repositories/access.repository';
 import { ActivityRepository } from 'src/repositories/activity.repository';
 import { AlbumUserRepository } from 'src/repositories/album-user.repository';
 import { AlbumRepository } from 'src/repositories/album.repository';
+import { ApiKeyRepository } from 'src/repositories/api-key.repository';
+import { AssetEditRepository } from 'src/repositories/asset-edit.repository';
+import { AssetFileRepository } from 'src/repositories/asset-file.repository';
 import { AssetJobRepository } from 'src/repositories/asset-job.repository';
 import { AssetRepository } from 'src/repositories/asset.repository';
+import { ClusterGroupRepository } from 'src/repositories/cluster-group.repository';
 import { ConfigRepository } from 'src/repositories/config.repository';
+import { CronRepository } from 'src/repositories/cron.repository';
 import { CryptoRepository } from 'src/repositories/crypto.repository';
 import { DatabaseRepository } from 'src/repositories/database.repository';
+import { DuplicateRepository } from 'src/repositories/duplicate.repository';
 import { EmailRepository } from 'src/repositories/email.repository';
 import { EventRepository } from 'src/repositories/event.repository';
+import { IntegrityRepository } from 'src/repositories/integrity.repository';
 import { JobRepository } from 'src/repositories/job.repository';
+import { LibraryRepository } from 'src/repositories/library.repository';
 import { LoggingRepository } from 'src/repositories/logging.repository';
 import { MachineLearningRepository } from 'src/repositories/machine-learning.repository';
+import { MapRepository } from 'src/repositories/map.repository';
+import { MediaRepository } from 'src/repositories/media.repository';
 import { MemoryRepository } from 'src/repositories/memory.repository';
+import { MetadataRepository } from 'src/repositories/metadata.repository';
 import { NotificationRepository } from 'src/repositories/notification.repository';
 import { OcrRepository } from 'src/repositories/ocr.repository';
 import { PartnerRepository } from 'src/repositories/partner.repository';
 import { PersonRepository } from 'src/repositories/person.repository';
+import { PluginRepository } from 'src/repositories/plugin.repository';
 import { SearchRepository } from 'src/repositories/search.repository';
 import { SessionRepository } from 'src/repositories/session.repository';
 import { SharedLinkAssetRepository } from 'src/repositories/shared-link-asset.repository';
@@ -46,11 +62,13 @@ import { TagRepository } from 'src/repositories/tag.repository';
 import { TelemetryRepository } from 'src/repositories/telemetry.repository';
 import { UserRepository } from 'src/repositories/user.repository';
 import { VersionHistoryRepository } from 'src/repositories/version-history.repository';
+import { WorkflowRepository } from 'src/repositories/workflow.repository';
 import { DB } from 'src/schema';
 import { AlbumTable } from 'src/schema/tables/album.table';
 import { AssetExifTable } from 'src/schema/tables/asset-exif.table';
 import { AssetFileTable } from 'src/schema/tables/asset-file.table';
 import { AssetJobStatusTable } from 'src/schema/tables/asset-job-status.table';
+import { AssetMetadataTable } from 'src/schema/tables/asset-metadata.table';
 import { AssetTable } from 'src/schema/tables/asset.table';
 import { FaceSearchTable } from 'src/schema/tables/face-search.table';
 import { MemoryTable } from 'src/schema/tables/memory.table';
@@ -61,40 +79,48 @@ import { TagAssetTable } from 'src/schema/tables/tag-asset.table';
 import { TagTable } from 'src/schema/tables/tag.table';
 import { UserTable } from 'src/schema/tables/user.table';
 import { BASE_SERVICE_DEPENDENCIES, BaseService } from 'src/services/base.service';
+import { MetadataService } from 'src/services/metadata.service';
 import { SyncService } from 'src/services/sync.service';
+import { ClassConstructor, ClassConstructorsToInstances, UploadFile } from 'src/types';
+import { getConfig, updateConfig } from 'src/utils/config';
+import { mockEnvData } from 'test/repositories/config.repository.mock';
 import { newTelemetryRepositoryMock } from 'test/repositories/telemetry.repository.mock';
 import { factory, newDate, newEmbedding, newUuid } from 'test/small.factory';
 import { automock, wait } from 'test/utils';
 import { Mocked } from 'vitest';
 
-interface ClassConstructor<T = any> extends Function {
-  new (...args: any[]): T;
-}
+// eslint-disable-next-line unicorn/prefer-module
+export const testAssetsDir = resolve(__dirname, '../../e2e/test-assets');
 
 type MediumTestOptions = {
-  mock: ClassConstructor<any>[];
-  real: ClassConstructor<any>[];
+  mock: Array<(typeof BASE_SERVICE_DEPENDENCIES)[number]>;
+  real: Array<(typeof BASE_SERVICE_DEPENDENCIES)[number]>;
   database: Kysely<DB>;
 };
 
-export const newMediumService = <S extends BaseService>(Service: ClassConstructor<S>, options: MediumTestOptions) => {
+type BaseServiceDeps = typeof BASE_SERVICE_DEPENDENCIES;
+
+export const newMediumService = <S extends ClassConstructor<typeof BaseService>>(
+  Service: S,
+  options: MediumTestOptions,
+) => {
   const ctx = new MediumTestContext(Service, options);
   return { sut: ctx.sut, ctx };
 };
 
-export class MediumTestContext<S extends BaseService = BaseService> {
+export class MediumTestContext<S extends ClassConstructor<typeof BaseService> = ClassConstructor<typeof BaseService>> {
   private repoCache: Record<string, any> = {};
-  private sutDeps: any[];
+  private sutDeps: ClassConstructorsToInstances<BaseServiceDeps>;
 
-  sut: S;
+  sut: InstanceType<S>;
   database: Kysely<DB>;
 
   constructor(
-    Service: ClassConstructor<S>,
+    Service: S,
     private options: MediumTestOptions,
   ) {
     this.sutDeps = this.makeDeps(options);
-    this.sut = new Service(...this.sutDeps);
+    this.sut = new Service(...this.sutDeps) as InstanceType<S>;
     this.database = options.database;
   }
 
@@ -112,7 +138,7 @@ export class MediumTestContext<S extends BaseService = BaseService> {
         throw new Error(`Real repository ${dep.name} is not a valid dependency`);
       }
     }
-    return (deps as ClassConstructor<any>[]).map((dep) => {
+    return deps.map((dep) => {
       if (options.real.includes(dep)) {
         return this.get(dep);
       }
@@ -120,11 +146,11 @@ export class MediumTestContext<S extends BaseService = BaseService> {
       if (options.mock.includes(dep)) {
         return newMockRepository(dep);
       }
-    });
+    }) as unknown as ClassConstructorsToInstances<BaseServiceDeps>;
   }
 
-  get<T>(key: ClassConstructor<T>): T {
-    if (!this.repoCache[key.name]) {
+  get<T extends BaseServiceDeps[number]>(key: T): InstanceType<T> {
+    if (!Object.hasOwn(this.repoCache, key.name)) {
       const real = newRealRepository(key, this.options.database);
       this.repoCache[key.name] = real;
     }
@@ -132,8 +158,8 @@ export class MediumTestContext<S extends BaseService = BaseService> {
     return this.repoCache[key.name];
   }
 
-  getMock<T, R = Mocked<T>>(key: ClassConstructor<T>): R {
-    const index = BASE_SERVICE_DEPENDENCIES.indexOf(key as any);
+  getMock<T extends BaseServiceDeps[number], R = Mocked<InstanceType<T>>>(key: T): R {
+    const index = BASE_SERVICE_DEPENDENCIES.indexOf(key);
     if (index === -1 || !this.options.mock.includes(key)) {
       throw new Error(`getMock called with a key that is not a mock: ${key.name}`);
     }
@@ -142,7 +168,8 @@ export class MediumTestContext<S extends BaseService = BaseService> {
   }
 
   async newUser(dto: Partial<Insertable<UserTable>> = {}) {
-    const user = mediumFactory.userInsert(dto);
+    const clusterGroup = dto.clusterGroupId ? undefined : await this.get(ClusterGroupRepository).create();
+    const user = mediumFactory.userInsert({ ...dto, clusterGroupId: dto.clusterGroupId ?? clusterGroup!.id });
     const result = await this.get(UserRepository).create(user);
     return { user, result };
   }
@@ -172,6 +199,12 @@ export class MediumTestContext<S extends BaseService = BaseService> {
     return { asset, result };
   }
 
+  async newMetadata(dto: Insertable<AssetMetadataTable>) {
+    const { assetId, ...item } = dto;
+    const result = await this.get(AssetRepository).upsertMetadata(assetId, [item]);
+    return { metadata: dto, result };
+  }
+
   async newAssetFile(dto: Insertable<AssetFileTable>) {
     const result = await this.get(AssetRepository).upsertFile(dto);
     return { result };
@@ -195,13 +228,18 @@ export class MediumTestContext<S extends BaseService = BaseService> {
   }
 
   async newExif(dto: Insertable<AssetExifTable>) {
-    const result = await this.get(AssetRepository).upsertExif(dto);
+    const result = await this.get(AssetRepository).upsertExif({ exif: dto, lockedPropertiesBehavior: 'override' });
     return { result };
   }
 
-  async newAlbum(dto: Insertable<AlbumTable>) {
+  async newAlbum({ ownerId, ...dto }: Insertable<AlbumTable> & { ownerId: string }, assetIds?: string[]) {
     const album = mediumFactory.albumInsert(dto);
-    const result = await this.get(AlbumRepository).create(album, [], []);
+    const result = await this.get(AlbumRepository).create(
+      album,
+      assetIds ?? [],
+      [{ userId: ownerId, role: AlbumUserRole.Owner }],
+      ownerId,
+    );
     return { album, result };
   }
 
@@ -212,8 +250,27 @@ export class MediumTestContext<S extends BaseService = BaseService> {
 
   async newAlbumUser(dto: { albumId: string; userId: string; role?: AlbumUserRole }) {
     const { albumId, userId, role = AlbumUserRole.Editor } = dto;
-    const result = await this.get(AlbumUserRepository).create({ albumsId: albumId, usersId: userId, role });
+    const result = await this.get(AlbumUserRepository).create({ albumId, userId, role });
     return { albumUser: { albumId, userId, role }, result };
+  }
+
+  /** An album owned by one user, containing one asset, shared with a second user */
+  async newSharedAlbum(dto: { role?: AlbumUserRole } = {}) {
+    const { user: owner } = await this.newUser();
+    const { user: sharedWith } = await this.newUser();
+    const { asset } = await this.newAsset({ ownerId: owner.id });
+    const { album } = await this.newAlbum({ ownerId: owner.id }, [asset.id]);
+    await this.newAlbumUser({ albumId: album.id, userId: sharedWith.id, role: dto.role ?? AlbumUserRole.Editor });
+
+    return { album, asset, owner, sharedWith };
+  }
+
+  async softDeleteAsset(assetId: string) {
+    await this.database.updateTable('asset').set({ deletedAt: new Date() }).where('id', '=', assetId).execute();
+  }
+
+  async softDeleteAlbum(albumId: string) {
+    await this.database.updateTable('album').set({ deletedAt: new Date() }).where('id', '=', albumId).execute();
   }
 
   async newJobStatus(dto: Partial<Insertable<AssetJobStatusTable>> & { assetId: string }) {
@@ -223,8 +280,14 @@ export class MediumTestContext<S extends BaseService = BaseService> {
   }
 
   async newPerson(dto: Partial<Insertable<PersonTable>> & { ownerId: string }) {
-    const person = mediumFactory.personInsert(dto);
-    const result = await this.get(PersonRepository).create(person);
+    const repository = this.get(PersonRepository);
+    let personGroupId = dto.personGroupId;
+    if (!personGroupId) {
+      const group = await repository.createGroup(dto.ownerId);
+      personGroupId = group.id;
+    }
+    const person = mediumFactory.personInsert({ ...dto, personGroupId });
+    const result = await repository.create(person);
     return { person, result };
   }
 
@@ -253,20 +316,53 @@ export class MediumTestContext<S extends BaseService = BaseService> {
     };
   }
 
+  async newTag(dto: Insertable<TagTable>) {
+    const tag = mediumFactory.tagInsert(dto);
+    const result = await this.get(TagRepository).create(tag);
+    return { tag, result };
+  }
+
   async newTagAsset(tagBulkAssets: { tagIds: string[]; assetIds: string[] }) {
     const tagsAssets: Insertable<TagAssetTable>[] = [];
-    for (const tagsId of tagBulkAssets.tagIds) {
-      for (const assetsId of tagBulkAssets.assetIds) {
-        tagsAssets.push({ tagsId, assetsId });
+    for (const tagId of tagBulkAssets.tagIds) {
+      for (const assetId of tagBulkAssets.assetIds) {
+        tagsAssets.push({ tagId, assetId });
       }
     }
 
     const result = await this.get(TagRepository).upsertAssetIds(tagsAssets);
     return { tagsAssets, result };
   }
+
+  async newEdits(assetId: string, dto: AssetEditsCreateDto) {
+    const edits = await this.get(AssetEditRepository).replaceAll(assetId, dto.edits as AssetEditActionItem[]);
+    return { edits };
+  }
+
+  async getConfig({ withCache = true }: { withCache?: boolean } = {}) {
+    return getConfig(
+      {
+        configRepo: this.get(ConfigRepository),
+        metadataRepo: this.get(SystemMetadataRepository),
+        logger: this.get(LoggingRepository),
+      },
+      { withCache },
+    );
+  }
+
+  async updateConfig(config: SystemConfig) {
+    return updateConfig(
+      {
+        configRepo: this.get(ConfigRepository),
+        metadataRepo: this.get(SystemMetadataRepository),
+        logger: this.get(LoggingRepository),
+      },
+      config,
+    );
+  }
 }
 
-export class SyncTestContext extends MediumTestContext<SyncService> {
+export class SyncTestContext extends MediumTestContext<typeof SyncService> {
   constructor(database: Kysely<DB>) {
     super(SyncService, {
       database,
@@ -275,11 +371,11 @@ export class SyncTestContext extends MediumTestContext<SyncService> {
     });
   }
 
-  async syncStream(auth: AuthDto, types: SyncRequestType[], reset?: boolean) {
+  async syncStream(auth: AuthDto, types: SyncRequestType[], shouldReset?: boolean) {
     const stream = mediumFactory.syncStream();
     // Wait for 2ms to ensure all updates are available and account for setTimeout inaccuracy
     await wait(2);
-    await this.sut.stream(auth, stream, { types, reset });
+    await this.sut.stream(auth, stream, { types, reset: shouldReset });
 
     return stream.getResponse();
   }
@@ -305,15 +401,86 @@ export class SyncTestContext extends MediumTestContext<SyncService> {
   }
 }
 
-const newRealRepository = <T>(key: ClassConstructor<T>, db: Kysely<DB>): T => {
+const mockDate = new Date('2024-06-01T12:00:00.000Z');
+const mockStats = {
+  mtime: mockDate,
+  atime: mockDate,
+  ctime: mockDate,
+  birthtime: mockDate,
+  atimeMs: 0,
+  mtimeMs: 0,
+  ctimeMs: 0,
+  birthtimeMs: 0,
+};
+
+export class ExifTestContext extends MediumTestContext<typeof MetadataService> {
+  constructor(database: Kysely<DB>) {
+    super(MetadataService, {
+      database,
+      real: [
+        AssetRepository,
+        AssetJobRepository,
+        MediaRepository,
+        MetadataRepository,
+        SystemMetadataRepository,
+        TagRepository,
+      ],
+      mock: [ConfigRepository, EventRepository, LoggingRepository, MapRepository, StorageRepository],
+    });
+
+    this.getMock(ConfigRepository).getEnv.mockReturnValue(mockEnvData({}));
+    this.getMock(EventRepository).emit.mockResolvedValue();
+    this.getMock(MapRepository).reverseGeocode.mockResolvedValue({ country: null, state: null, city: null });
+    this.getMock(StorageRepository).stat.mockResolvedValue(mockStats as Stats);
+  }
+
+  getMockStats() {
+    return mockStats;
+  }
+
+  getGps(assetId: string) {
+    return this.database
+      .selectFrom('asset_exif')
+      .select(['latitude', 'longitude'])
+      .where('assetId', '=', assetId)
+      .executeTakeFirstOrThrow();
+  }
+
+  getTags(assetId: string) {
+    return this.database
+      .selectFrom('tag')
+      .innerJoin('tag_asset', 'tag.id', 'tag_asset.tagId')
+      .where('tag_asset.assetId', '=', assetId)
+      .selectAll()
+      .execute();
+  }
+
+  getDates(assetId: string) {
+    return this.database
+      .selectFrom('asset')
+      .innerJoin('asset_exif', 'asset.id', 'asset_exif.assetId')
+      .where('id', '=', assetId)
+      .select(['asset.fileCreatedAt', 'asset.localDateTime', 'asset_exif.dateTimeOriginal', 'asset_exif.timeZone'])
+      .executeTakeFirstOrThrow();
+  }
+}
+
+const newRealRepository = <T extends BaseServiceDeps[number]>(key: T, db: Kysely<DB>): InstanceType<T> => {
   switch (key) {
     case AccessRepository:
     case AlbumRepository:
     case AlbumUserRepository:
     case ActivityRepository:
+    case ApiKeyRepository:
     case AssetRepository:
+    case AssetEditRepository:
+    case AssetFileRepository:
     case AssetJobRepository:
+    case ClusterGroupRepository:
+    case DuplicateRepository:
+    case IntegrityRepository:
     case MemoryRepository:
+    case LibraryRepository:
     case NotificationRepository:
     case OcrRepository:
     case PartnerRepository:
@@ -327,29 +494,43 @@ const newRealRepository = <T>(key: ClassConstructor<T>, db: Kysely<DB>): T => {
     case SyncCheckpointRepository:
     case SystemMetadataRepository:
     case UserRepository:
-    case VersionHistoryRepository: {
-      return new key(db);
+    case VersionHistoryRepository:
+    case WorkflowRepository: {
+      return new key(db) as InstanceType<T>;
     }
 
     case ConfigRepository:
     case CryptoRepository: {
-      return new key();
+      return new key() as InstanceType<T>;
     }
 
     case DatabaseRepository: {
-      return new key(db, LoggingRepository.create(), new ConfigRepository());
+      return new key(db, LoggingRepository.create(), new ConfigRepository()) as InstanceType<T>;
     }
 
     case EmailRepository: {
-      return new key(LoggingRepository.create());
+      return new key(LoggingRepository.create()) as InstanceType<T>;
+    }
+
+    case MediaRepository:
+    case MetadataRepository: {
+      return new key(LoggingRepository.create()) as InstanceType<T>;
+    }
+
+    case PluginRepository: {
+      return new key(db, LoggingRepository.create()) as InstanceType<T>;
+    }
+
+    case StorageRepository: {
+      return new key(LoggingRepository.create()) as InstanceType<T>;
     }
 
     case TagRepository: {
-      return new key(db, LoggingRepository.create());
+      return new key(db, LoggingRepository.create()) as InstanceType<T>;
     }
 
-    case LoggingRepository as unknown as ClassConstructor<LoggingRepository>: {
-      return new key() as unknown as T;
+    case LoggingRepository: {
+      return new key(undefined, undefined) as InstanceType<T>;
     }
 
     default: {
@@ -366,7 +547,9 @@ const newMockRepository = <T>(key: ClassConstructor<T>) => {
     case AssetJobRepository:
     case ConfigRepository:
     case CryptoRepository:
+    case LibraryRepository:
     case MemoryRepository:
+    case IntegrityRepository:
     case NotificationRepository:
     case OcrRepository:
     case PartnerRepository:
@@ -377,8 +560,13 @@ const newMockRepository = <T>(key: ClassConstructor<T>) => {
     case SystemMetadataRepository:
     case UserRepository:
     case VersionHistoryRepository:
-    case TagRepository: {
+    case TagRepository:
+    case WorkflowRepository: {
       return automock(key);
+    }
+
+    case MapRepository: {
+      return automock(MapRepository, { args: [undefined, undefined, { setContext: () => {} }] });
     }
 
     case TelemetryRepository: {
@@ -389,6 +577,10 @@ const newMockRepository = <T>(key: ClassConstructor<T>) => {
       return automock(DatabaseRepository, {
         args: [undefined, { setContext: () => {} }, { getEnv: () => ({ database: { vectorExtension: '' } }) }],
       });
+    }
+
+    case CronRepository: {
+      return automock(CronRepository, { args: [undefined, { setContext: () => {} }], strict: false });
     }
 
     case EmailRepository: {
@@ -435,10 +627,9 @@ const assetInsert = (asset: Partial<Insertable<AssetTable>> = {}) => {
   const id = asset.id || newUuid();
   const now = newDate();
   const defaults: Insertable<AssetTable> = {
-    deviceAssetId: '',
-    deviceId: '',
     originalFileName: '',
     checksum: randomBytes(32),
+    checksumAlgorithm: ChecksumAlgorithm.sha1File,
     type: AssetType.Image,
     originalPath: '/path/to/something.jpg',
     ownerId: 'not-a-valid-uuid',
@@ -447,6 +638,7 @@ const assetInsert = (asset: Partial<Insertable<AssetTable>> = {}) => {
     fileModifiedAt: now,
     localDateTime: now,
     visibility: AssetVisibility.Timeline,
+    isEdited: false,
   };
 
   return {
@@ -456,9 +648,9 @@ const assetInsert = (asset: Partial<Insertable<AssetTable>> = {}) => {
   };
 };
 
-const albumInsert = (album: Partial<Insertable<AlbumTable>> & { ownerId: string }) => {
+const albumInsert = (album: Partial<Insertable<AlbumTable>>) => {
   const id = album.id || newUuid();
-  const defaults: Omit<Insertable<AlbumTable>, 'ownerId'> = {
+  const defaults: Insertable<AlbumTable> = {
     albumName: 'Album',
   };
 
@@ -491,8 +683,9 @@ const assetFaceInsert = (assetFace: Partial<AssetFace> & { assetId: string }) =>
     id: assetFace.id ?? newUuid(),
     imageHeight: assetFace.imageHeight ?? 10,
     imageWidth: assetFace.imageWidth ?? 10,
-    personId: assetFace.personId ?? null,
+    personGroupId: assetFace.personGroupId ?? null,
     sourceType: assetFace.sourceType ?? SourceType.MachineLearning,
+    isVisible: assetFace.isVisible ?? true,
   };
 
   return {
@@ -509,8 +702,6 @@ const assetJobStatusInsert = (
     duplicatesDetectedAt: date,
     facesRecognizedAt: date,
     metadataExtractedAt: date,
-    previewAt: date,
-    thumbnailAt: date,
   };
 
   return {
@@ -519,13 +710,12 @@ const assetJobStatusInsert = (
   };
 };
 
-const personInsert = (person: Partial<Insertable<PersonTable>> & { ownerId: string }) => {
+const personInsert = (person: Partial<Insertable<PersonTable>> & { ownerId: string; personGroupId: string }) => {
   const defaults = {
     birthDate: person.birthDate || null,
     color: person.color || null,
     createdAt: person.createdAt || newDate(),
     faceAssetId: person.faceAssetId || null,
-    id: person.id || newUuid(),
     isFavorite: person.isFavorite || false,
     isHidden: person.isHidden || false,
     name: person.name || 'Test Name',
@@ -538,7 +728,7 @@ const personInsert = (person: Partial<Insertable<PersonTable>> & { ownerId: stri
   };
 };
 
-const sha256 = (value: string) => createHash('sha256').update(value).digest('base64');
+const sha256 = (value: string) => createHash('sha256').update(value).digest();
 
 const sessionInsert = ({
   id = newUuid(),
@@ -559,7 +749,7 @@ const sessionInsert = ({
   };
 };
 
-const userInsert = (user: Partial<Insertable<UserTable>> = {}) => {
+const userInsert = (user: Partial<Insertable<UserTable>> & { clusterGroupId: string }) => {
   const id = user.id || newUuid();
 
   const defaults = {
@@ -623,6 +813,8 @@ const tagInsert = (tag: Partial<Insertable<TagTable>>) => {
 class CustomWritable extends Writable {
   private data = '';
 
+  // determined by Writable interface
+  // eslint-disable-next-line unicorn/prefer-private-class-fields
   _write(chunk: any, encoding: string, callback: () => void) {
     this.data += chunk.toString();
     callback();
@@ -646,7 +838,7 @@ const loginDetails = () => {
 };
 
 const loginResponse = (): LoginResponseDto => {
-  const user = userInsert({});
+  const user = userInsert({ clusterGroupId: newUuid() });
   return {
     accessToken: 'access-token',
     userId: user.id,
@@ -656,6 +848,17 @@ const loginResponse = (): LoginResponseDto => {
     isAdmin: user.isAdmin,
     shouldChangePassword: user.shouldChangePassword,
     isOnboarded: false,
+  };
+};
+
+const uploadFile = (file: Partial<UploadFile> = {}) => {
+  return {
+    uuid: newUuid(),
+    checksum: randomBytes(32),
+    originalPath: '/path/to/file.jpg',
+    originalName: 'file.jpg',
+    size: 123_456,
+    ...file,
   };
 };
 
@@ -673,4 +876,5 @@ export const mediumFactory = {
   loginDetails,
   loginResponse,
   tagInsert,
+  uploadFile,
 };

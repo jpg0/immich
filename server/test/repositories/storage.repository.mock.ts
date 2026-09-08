@@ -13,7 +13,7 @@ export const makeMockWatcher =
   ({ items, close }: MockWatcherOptions) =>
   (paths: string[], options: ChokidarOptions, events: Partial<WatchEvents>) => {
     events.onReady?.();
-    for (const item of items || []) {
+    for (const item of items ?? []) {
       switch (item.event) {
         case 'add': {
           events.onAdd?.(item.value);
@@ -38,6 +38,7 @@ export const makeMockWatcher =
       return () => close();
     }
 
+    // eslint-disable-next-line unicorn/consistent-function-scoping
     return () => Promise.resolve();
   };
 
@@ -47,8 +48,13 @@ export const newStorageRepositoryMock = (): Mocked<RepositoryInterface<StorageRe
 
   return {
     createZipStream: vitest.fn(),
+    createPlainReadStream: vitest.fn(),
     createReadStream: vitest.fn(),
+    createGzip: vitest.fn(),
+    createGunzip: vitest.fn(),
     readFile: vitest.fn(),
+    readJsonFile: vitest.fn() as Mocked<StorageRepository>['readJsonFile'],
+    readdirWithTypes: vitest.fn(),
     createFile: vitest.fn(),
     createWriteStream: vitest.fn(),
     createOrOverwriteFile: vitest.fn(),
@@ -69,5 +75,6 @@ export const newStorageRepositoryMock = (): Mocked<RepositoryInterface<StorageRe
     copyFile: vitest.fn(),
     utimes: vitest.fn(),
     watch: vitest.fn().mockImplementation(makeMockWatcher({})),
+    watchDir: vitest.fn().mockImplementation(() => ({ close: vitest.fn(), on: vitest.fn() })),
   };
 };

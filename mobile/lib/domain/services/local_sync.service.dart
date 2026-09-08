@@ -2,27 +2,66 @@ import 'dart:async';
 
 import 'package:collection/collection.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:immich_mobile/domain/models/album/local_album.model.dart';
 import 'package:immich_mobile/domain/models/asset/base_asset.model.dart';
+import 'package:immich_mobile/domain/models/store.model.dart';
+import 'package:immich_mobile/entities/store.entity.dart';
 import 'package:immich_mobile/extensions/platform_extensions.dart';
 import 'package:immich_mobile/infrastructure/repositories/local_album.repository.dart';
+import 'package:immich_mobile/infrastructure/repositories/local_asset.repository.dart';
+import 'package:immich_mobile/infrastructure/repositories/trashed_local_asset.repository.dart';
 import 'package:immich_mobile/platform/native_sync_api.g.dart';
+import 'package:immich_mobile/repositories/asset_media.repository.dart';
+import 'package:immich_mobile/repositories/permission.repository.dart';
 import 'package:immich_mobile/utils/datetime_helpers.dart';
 import 'package:immich_mobile/utils/diff.dart';
 import 'package:logging/logging.dart';
 
+const String _kSyncCancelledCode = "SYNC_CANCELLED";
+
 class LocalSyncService {
-  final DriftLocalAlbumRepository _localAlbumRepository;
+  final LocalAlbumRepository _localAlbumRepository;
+  // ignore: unused_field
+  final LocalAssetRepository _localAssetRepository;
   final NativeSyncApi _nativeSyncApi;
+  final TrashedLocalAssetRepository _trashedLocalAssetRepository;
+  final AssetMediaRepository _assetMediaRepository;
+  final DevicePermissionRepository _permissionRepository;
+  final Completer<void>? _cancellation;
   final Logger _log = Logger("DeviceSyncService");
 
-  LocalSyncService({required DriftLocalAlbumRepository localAlbumRepository, required NativeSyncApi nativeSyncApi})
-    : _localAlbumRepository = localAlbumRepository,
-      _nativeSyncApi = nativeSyncApi;
+  LocalSyncService({
+    required this._localAlbumRepository,
+    required this._localAssetRepository,
+    required this._nativeSyncApi,
+    required this._trashedLocalAssetRepository,
+    required this._assetMediaRepository,
+    required this._permissionRepository,
+    this._cancellation,
+  }) {
+    unawaited(_cancellation?.future.then((_) => _nativeSyncApi.cancelSync().onError(_log.warning)));
+  }
+
+  bool get _isCancelled => _cancellation?.isCompleted ?? false;
 
   Future<void> sync({bool full = false}) async {
     final Stopwatch stopwatch = Stopwatch()..start();
     try {
+      if (CurrentPlatform.isAndroid && Store.get(StoreKey.manageLocalMediaAndroid, false)) {
+        final hasPermission = await _permissionRepository.hasManageMediaPermission();
+        if (hasPermission) {
+          await _syncTrashedAssets();
+        } else {
+          _log.warning("syncTrashedAssets cannot proceed because MANAGE_MEDIA permission is missing");
+        }
+      }
+
+      if (CurrentPlatform.isIOS) {
+        // final assets = await _localAssetRepository.getEmptyCloudIdAssets();
+        // await _mapIosCloudIds(assets);
+      }
+
       if (full || await _nativeSyncApi.shouldFullSync()) {
         _log.fine("Full sync request from ${full ? "user" : "native"}");
         return await fullSync();
@@ -39,8 +78,9 @@ class LocalSyncService {
 
       final deviceAlbums = await _nativeSyncApi.getAlbums();
       await _localAlbumRepository.updateAll(deviceAlbums.toLocalAlbums());
+      final newAssets = delta.updates.toLocalAssets();
       await _localAlbumRepository.processDelta(
-        updates: delta.updates.toLocalAssets(),
+        updates: newAssets,
         deletes: delta.deletes,
         assetAlbums: delta.assetAlbums,
       );
@@ -50,6 +90,10 @@ class LocalSyncService {
       // detect album deletions from the native side
       if (CurrentPlatform.isAndroid) {
         for (final album in dbAlbums) {
+          if (_isCancelled) {
+            _log.warning("Local sync cancelled. Stopped processing albums.");
+            return;
+          }
           final deviceIds = await _nativeSyncApi.getAssetIdsForAlbum(album.id);
           await _localAlbumRepository.syncDeletes(album.id, deviceIds);
         }
@@ -57,10 +101,13 @@ class LocalSyncService {
 
       if (CurrentPlatform.isIOS) {
         // On iOS, we need to full sync albums that are marked as cloud as the delta sync
-        // does not include changes for cloud albums. If ignoreIcloudAssets is enabled,
-        // remove the albums from the local database from the previous sync
+        // does not include changes for cloud albums.
         final cloudAlbums = deviceAlbums.where((a) => a.isCloud).toLocalAlbums();
         for (final album in cloudAlbums) {
+          if (_isCancelled) {
+            _log.warning("Local sync cancelled. Stopped processing cloud albums.");
+            return;
+          }
           final dbAlbum = dbAlbums.firstWhereOrNull((a) => a.id == album.id);
           if (dbAlbum == null) {
             _log.warning("Cloud album ${album.name} not found in local database. Skipping sync.");
@@ -68,9 +115,16 @@ class LocalSyncService {
           }
           await updateAlbum(dbAlbum, album);
         }
-      }
 
+        await _mapIosCloudIds(newAssets);
+      }
       await _nativeSyncApi.checkpointSync();
+    } on PlatformException catch (e, s) {
+      if (e.code == _kSyncCancelledCode) {
+        _log.warning("Local sync cancelled");
+      } else {
+        _log.severe("Error performing device sync", e, s);
+      }
     } catch (e, s) {
       _log.severe("Error performing device sync", e, s);
     } finally {
@@ -98,18 +152,30 @@ class LocalSyncService {
       await _nativeSyncApi.checkpointSync();
       stopwatch.stop();
       _log.info("Full device sync took - ${stopwatch.elapsedMilliseconds}ms");
+    } on PlatformException catch (e, s) {
+      if (e.code == _kSyncCancelledCode) {
+        _log.warning("Full device sync cancelled");
+      } else {
+        _log.severe("Error performing full device sync", e, s);
+      }
     } catch (e, s) {
       _log.severe("Error performing full device sync", e, s);
     }
   }
 
   Future<void> addAlbum(LocalAlbum album) async {
+    if (_isCancelled) {
+      return;
+    }
     try {
       _log.fine("Adding device album ${album.name}");
 
-      final assets = album.assetCount > 0 ? await _nativeSyncApi.getAssetsForAlbum(album.id) : <PlatformAsset>[];
+      final assets = album.assetCount > 0
+          ? await _nativeSyncApi.getAssetsForAlbum(album.id).then((a) => a.toLocalAssets())
+          : <LocalAsset>[];
 
-      await _localAlbumRepository.upsert(album, toUpsert: assets.toLocalAssets());
+      await _localAlbumRepository.upsert(album, toUpsert: assets);
+      await _mapIosCloudIds(assets);
       _log.fine("Successfully added device album ${album.name}");
     } catch (e, s) {
       _log.warning("Error while adding device album", e, s);
@@ -120,7 +186,7 @@ class LocalSyncService {
     _log.fine("Removing device album ${a.name}");
     try {
       // Asset deletion is handled in the repository
-      await _localAlbumRepository.delete(a.id);
+      await _localAlbumRepository.deleteAlbum(a.id);
     } catch (e, s) {
       _log.warning("Error while removing device album", e, s);
     }
@@ -128,6 +194,9 @@ class LocalSyncService {
 
   // The deviceAlbum is ignored since we are going to refresh it anyways
   FutureOr<bool> updateAlbum(LocalAlbum dbAlbum, LocalAlbum deviceAlbum) async {
+    if (_isCancelled) {
+      return false;
+    }
     try {
       _log.fine("Syncing device album ${dbAlbum.name}");
 
@@ -179,13 +248,16 @@ class LocalSyncService {
         return false;
       }
 
-      final newAssets = await _nativeSyncApi.getAssetsForAlbum(deviceAlbum.id, updatedTimeCond: updatedTime);
+      final newAssets = await _nativeSyncApi
+          .getAssetsForAlbum(deviceAlbum.id, updatedTimeCond: updatedTime)
+          .then((a) => a.toLocalAssets());
 
       await _localAlbumRepository.upsert(
         deviceAlbum.copyWith(backupSelection: dbAlbum.backupSelection),
-        toUpsert: newAssets.toLocalAssets(),
+        toUpsert: newAssets,
       );
 
+      await _mapIosCloudIds(newAssets);
       return true;
     } catch (e, s) {
       _log.warning("Error on fast syncing local album: ${dbAlbum.name}", e, s);
@@ -217,6 +289,7 @@ class LocalSyncService {
       if (dbAlbum.assetCount == 0) {
         _log.fine("Device album ${deviceAlbum.name} is empty. Adding assets to DB.");
         await _localAlbumRepository.upsert(updatedDeviceAlbum, toUpsert: assetsInDevice);
+        await _mapIosCloudIds(assetsInDevice);
         return true;
       }
 
@@ -254,6 +327,7 @@ class LocalSyncService {
       }
 
       await _localAlbumRepository.upsert(updatedDeviceAlbum, toUpsert: assetsToUpsert, toDelete: assetsToDelete);
+      await _mapIosCloudIds(assetsToUpsert);
 
       return true;
     } catch (e, s) {
@@ -262,16 +336,94 @@ class LocalSyncService {
     return true;
   }
 
+  // ignore: avoid-unused-parameters
+  Future<void> _mapIosCloudIds(List<LocalAsset> assets) async {
+    // if (!CurrentPlatform.isIOS || assets.isEmpty) {
+    return;
+    // }
+
+    // final assetIds = assets.map((a) => a.id).toList();
+    // final cloudMapping = <String, String>{};
+    // final cloudIds = await _nativeSyncApi.getCloudIdForAssetIds(assetIds);
+    // for (int i = 0; i < cloudIds.length; i++) {
+    //   final cloudIdResult = cloudIds[i];
+    //   if (cloudIdResult.cloudId != null) {
+    //     cloudMapping[cloudIdResult.assetId] = cloudIdResult.cloudId!;
+    //   } else {
+    //     final asset = assets.firstWhereOrNull((a) => a.id == cloudIdResult.assetId);
+    //     _log.fine(
+    //       "Cannot fetch cloudId for asset with id: ${cloudIdResult.assetId}, name: ${asset?.name}, createdAt: ${asset?.createdAt}. Error: ${cloudIdResult.error ?? "unknown"}",
+    //     );
+    //   }
+    // }
+
+    // await _localAlbumRepository.updateCloudMapping(cloudMapping);
+  }
+
   bool _assetsEqual(LocalAsset a, LocalAsset b) {
-    return a.updatedAt.isAtSameMomentAs(b.updatedAt) &&
+    if (CurrentPlatform.isAndroid) {
+      return a.updatedAt.isAtSameMomentAs(b.updatedAt) &&
+          a.createdAt.isAtSameMomentAs(b.createdAt) &&
+          a.width == b.width &&
+          a.height == b.height &&
+          a.durationMs == b.durationMs;
+    }
+
+    final firstAdjustment = a.adjustmentTime?.millisecondsSinceEpoch ?? 0;
+    final secondAdjustment = b.adjustmentTime?.millisecondsSinceEpoch ?? 0;
+    return firstAdjustment == secondAdjustment &&
         a.createdAt.isAtSameMomentAs(b.createdAt) &&
         a.width == b.width &&
         a.height == b.height &&
-        a.durationInSeconds == b.durationInSeconds;
+        a.durationMs == b.durationMs &&
+        a.latitude == b.latitude &&
+        a.longitude == b.longitude;
   }
 
   bool _albumsEqual(LocalAlbum a, LocalAlbum b) {
     return a.name == b.name && a.assetCount == b.assetCount && a.updatedAt.isAtSameMomentAs(b.updatedAt);
+  }
+
+  Future<void> _syncTrashedAssets() async {
+    final trashedAssetMap = await _nativeSyncApi.getTrashedAssets();
+    await processTrashedAssets(trashedAssetMap);
+  }
+
+  @visibleForTesting
+  Future<void> processTrashedAssets(Map<String, List<PlatformAsset>> trashedAssetMap) async {
+    if (trashedAssetMap.isEmpty) {
+      _log.info("syncTrashedAssets, No trashed assets found");
+    }
+    final trashedAssets = trashedAssetMap.cast<String, List<Object?>>().entries.expand(
+      (entry) => entry.value.cast<PlatformAsset>().toTrashedAssets(entry.key),
+    );
+
+    _log.fine("syncTrashedAssets, trashedAssets: ${trashedAssets.map((e) => e.asset.id)}");
+    await _trashedLocalAssetRepository.processTrashSnapshot(trashedAssets);
+
+    final assetsToRestore = await _trashedLocalAssetRepository.getToRestore();
+    if (assetsToRestore.isNotEmpty) {
+      final restoredIds = await _assetMediaRepository.restoreAssetsFromTrash(assetsToRestore);
+      await _trashedLocalAssetRepository.applyRestoredAssets(restoredIds);
+    } else {
+      _log.info("syncTrashedAssets, No remote assets found for restoration");
+    }
+
+    final localAssetsToTrash = await _trashedLocalAssetRepository.getToTrash();
+    if (localAssetsToTrash.isNotEmpty) {
+      final localIds = localAssetsToTrash.values.expand((assets) => assets).map((asset) => asset.id).toList();
+      _log.info("Moving to trash ${localIds.join(", ")} assets");
+      final movedIds = await _assetMediaRepository.deleteAll(localIds);
+      if (movedIds.isNotEmpty) {
+        final movedAssetsByAlbum = localAssetsToTrash.map(
+          (albumId, assets) => MapEntry(albumId, assets.where((asset) => movedIds.contains(asset.id)).toList()),
+        )..removeWhere((_, assets) => assets.isEmpty);
+
+        await _trashedLocalAssetRepository.trashLocalAsset(movedAssetsByAlbum);
+      }
+    } else {
+      _log.info("syncTrashedAssets, No assets found in backup-enabled albums for move to trash");
+    }
   }
 }
 
@@ -283,6 +435,7 @@ extension on Iterable<PlatformAlbum> {
         name: e.name,
         updatedAt: tryFromSecondsSinceEpoch(e.updatedAt, isUtc: true) ?? DateTime.timestamp(),
         assetCount: e.assetCount,
+        isIosSharedAlbum: e.isCloud,
       ),
     ).toList();
   }
@@ -290,20 +443,40 @@ extension on Iterable<PlatformAlbum> {
 
 extension on Iterable<PlatformAsset> {
   List<LocalAsset> toLocalAssets() {
-    return map(
-      (e) => LocalAsset(
-        id: e.id,
-        name: e.name,
-        checksum: null,
-        type: AssetType.values.elementAtOrNull(e.type) ?? AssetType.other,
-        createdAt: tryFromSecondsSinceEpoch(e.createdAt, isUtc: true) ?? DateTime.timestamp(),
-        updatedAt: tryFromSecondsSinceEpoch(e.updatedAt, isUtc: true) ?? DateTime.timestamp(),
-        width: e.width,
-        height: e.height,
-        durationInSeconds: e.durationInSeconds,
-        orientation: e.orientation,
-        isFavorite: e.isFavorite,
-      ),
-    ).toList();
+    return map((e) => e.toLocalAsset()).toList();
+  }
+
+  Iterable<TrashedAsset> toTrashedAssets(String albumId) {
+    return map((e) => (albumId: albumId, asset: e.toLocalAsset()));
   }
 }
+
+extension PlatformToLocalAsset on PlatformAsset {
+  LocalAsset toLocalAsset() => LocalAsset(
+    id: id,
+    name: name,
+    checksum: null,
+    type: AssetType.values.elementAtOrNull(type) ?? AssetType.other,
+    createdAt: tryFromSecondsSinceEpoch(createdAt, isUtc: true) ?? DateTime.timestamp(),
+    updatedAt: tryFromSecondsSinceEpoch(updatedAt, isUtc: true) ?? DateTime.timestamp(),
+    width: width,
+    height: height,
+    durationMs: durationMs,
+    isFavorite: isFavorite,
+    orientation: orientation,
+    playbackStyle: _toPlaybackStyle(playbackStyle),
+    adjustmentTime: tryFromSecondsSinceEpoch(adjustmentTime, isUtc: true),
+    latitude: latitude,
+    longitude: longitude,
+    isEdited: false,
+  );
+}
+
+AssetPlaybackStyle _toPlaybackStyle(PlatformAssetPlaybackStyle style) => switch (style) {
+  PlatformAssetPlaybackStyle.unknown => AssetPlaybackStyle.unknown,
+  PlatformAssetPlaybackStyle.image => AssetPlaybackStyle.image,
+  PlatformAssetPlaybackStyle.video => AssetPlaybackStyle.video,
+  PlatformAssetPlaybackStyle.imageAnimated => AssetPlaybackStyle.imageAnimated,
+  PlatformAssetPlaybackStyle.livePhoto => AssetPlaybackStyle.livePhoto,
+  PlatformAssetPlaybackStyle.videoLooping => AssetPlaybackStyle.videoLooping,
+};

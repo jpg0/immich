@@ -1,16 +1,18 @@
+import 'dart:async';
+import 'dart:math' as math;
+
 import 'package:auto_route/auto_route.dart';
-import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/svg.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
-import 'package:immich_mobile/domain/models/setting.model.dart';
 import 'package:immich_mobile/extensions/build_context_extensions.dart';
+import 'package:immich_mobile/generated/translations.g.dart';
 import 'package:immich_mobile/models/server_info/server_info.model.dart';
-import 'package:immich_mobile/providers/backup/drift_backup.provider.dart';
+import 'package:immich_mobile/providers/backup/backup.provider.dart';
 import 'package:immich_mobile/providers/cast.provider.dart';
 import 'package:immich_mobile/providers/infrastructure/readonly_mode.provider.dart';
-import 'package:immich_mobile/providers/infrastructure/setting.provider.dart';
+import 'package:immich_mobile/providers/infrastructure/settings.provider.dart';
 import 'package:immich_mobile/providers/server_info.provider.dart';
 import 'package:immich_mobile/providers/sync_status.provider.dart';
 import 'package:immich_mobile/providers/timeline/multiselect.provider.dart';
@@ -46,41 +48,37 @@ class ImmichSliverAppBar extends ConsumerWidget {
     final isReadonlyModeEnabled = ref.watch(readonlyModeProvider);
     final isMultiSelectEnabled = ref.watch(multiSelectProvider.select((s) => s.isEnabled));
 
-    return SliverAnimatedOpacity(
-      duration: Durations.medium1,
-      opacity: isMultiSelectEnabled ? 0 : 1,
-      sliver: SliverAppBar(
-        floating: floating,
-        pinned: pinned,
-        snap: snap,
-        expandedHeight: expandedHeight,
-        shape: const RoundedRectangleBorder(borderRadius: BorderRadius.all(Radius.circular(5))),
-        automaticallyImplyLeading: false,
-        centerTitle: false,
-        title: title ?? const _ImmichLogoWithText(),
-        actions: [
-          if (isCasting && !isReadonlyModeEnabled)
-            Padding(
-              padding: const EdgeInsets.only(right: 12),
-              child: IconButton(
-                onPressed: () {
-                  showDialog(context: context, builder: (context) => const CastDialog());
-                },
+    return SliverIgnorePointer(
+      ignoring: isMultiSelectEnabled,
+      sliver: SliverAnimatedOpacity(
+        duration: Durations.medium1,
+        opacity: isMultiSelectEnabled ? 0 : 1,
+        sliver: SliverAppBar(
+          backgroundColor: context.colorScheme.surface,
+          surfaceTintColor: context.colorScheme.surfaceTint,
+          elevation: 0,
+          scrolledUnderElevation: 1.0,
+          floating: floating,
+          pinned: pinned,
+          snap: snap,
+          expandedHeight: expandedHeight,
+          shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(bottom: Radius.circular(5))),
+          automaticallyImplyLeading: false,
+          centerTitle: false,
+          title: title ?? const _ImmichLogoWithText(),
+          actions: [
+            const _SyncStatusIndicator(),
+            if (isCasting && !isReadonlyModeEnabled)
+              IconButton(
+                onPressed: () => showDialog(context: context, builder: (context) => const CastDialog()),
                 icon: Icon(isCasting ? Icons.cast_connected_rounded : Icons.cast_rounded),
               ),
-            ),
-          const _SyncStatusIndicator(),
-          if (actions != null)
-            ...actions!.map((action) => Padding(padding: const EdgeInsets.only(right: 16), child: action)),
-          if ((kDebugMode || kProfileMode) && !isReadonlyModeEnabled)
-            IconButton(
-              icon: const Icon(Icons.science_rounded),
-              onPressed: () => context.pushRoute(const FeatInDevRoute()),
-            ),
-          if (showUploadButton && !isReadonlyModeEnabled)
-            const Padding(padding: EdgeInsets.only(right: 20), child: _BackupIndicator()),
-          const Padding(padding: EdgeInsets.only(right: 20), child: _ProfileIndicator()),
-        ],
+            ...?actions,
+            if (showUploadButton && !isReadonlyModeEnabled) const _BackupIndicator(),
+            const _ProfileIndicator(),
+            const SizedBox(width: 8),
+          ],
+        ),
       ),
     );
   }
@@ -90,27 +88,14 @@ class _ImmichLogoWithText extends StatelessWidget {
   const _ImmichLogoWithText();
 
   @override
-  Widget build(BuildContext context) {
-    return Builder(
-      builder: (BuildContext context) {
-        return Row(
-          children: [
-            Builder(
-              builder: (context) {
-                return Padding(
-                  padding: const EdgeInsets.only(top: 3.0),
-                  child: SvgPicture.asset(
-                    context.isDarkTheme ? 'assets/immich-logo-inline-dark.svg' : 'assets/immich-logo-inline-light.svg',
-                    height: 40,
-                  ),
-                );
-              },
-            ),
-          ],
-        );
-      },
-    );
-  }
+  Widget build(BuildContext context) => AnimatedOpacity(
+    opacity: IconTheme.of(context).opacity ?? 1,
+    duration: kThemeChangeDuration,
+    child: SvgPicture.asset(
+      context.isDarkTheme ? 'assets/immich-logo-inline-dark.svg' : 'assets/immich-logo-inline-light.svg',
+      height: 40,
+    ),
+  );
 }
 
 class _ProfileIndicator extends ConsumerWidget {
@@ -122,39 +107,43 @@ class _ProfileIndicator extends ConsumerWidget {
     final bool versionWarningPresent = ref.watch(versionWarningPresentProvider(user));
     final serverInfoState = ref.watch(serverInfoProvider);
 
-    const widgetSize = 30.0;
+    const widgetSize = 32.0;
+
+    // TODO: remove this when update Flutter version newer than 3.35.7
+    final isIpad = defaultTargetPlatform == TargetPlatform.iOS && !context.isMobile;
 
     void toggleReadonlyMode() {
-      final isReadonlyModeEnabled = ref.watch(readonlyModeProvider);
+      final isReadonlyModeEnabled = ref.read(readonlyModeProvider);
       ref.read(readonlyModeProvider.notifier).toggleReadonlyMode();
 
       context.scaffoldMessenger.showSnackBar(
         SnackBar(
           duration: const Duration(seconds: 2),
           content: Text(
-            (isReadonlyModeEnabled ? "readonly_mode_disabled" : "readonly_mode_enabled").tr(),
+            isReadonlyModeEnabled ? context.t.readonly_mode_disabled : context.t.readonly_mode_enabled,
             style: context.textTheme.bodyLarge?.copyWith(color: context.primaryColor),
           ),
         ),
       );
     }
 
-    return InkWell(
-      onTap: () => showDialog(context: context, useRootNavigator: false, builder: (ctx) => const ImmichAppBarDialog()),
+    return IconButton(
+      onPressed: () => showDialog(
+        context: context,
+        useRootNavigator: false,
+        barrierDismissible: !isIpad,
+        builder: (ctx) => const ImmichAppBarDialog(),
+      ),
       onLongPress: () => toggleReadonlyMode(),
-      borderRadius: const BorderRadius.all(Radius.circular(12)),
-      child: Badge(
-        label: Container(
-          decoration: BoxDecoration(
-            color: context.isDarkTheme ? Colors.black : Colors.white,
-            borderRadius: BorderRadius.circular(widgetSize / 2),
-          ),
-          child: Icon(
+      icon: Badge(
+        label: _BadgeLabel(
+          Icon(
             Icons.info,
             color: serverInfoState.versionStatus == VersionStatus.error
                 ? context.colorScheme.error
                 : context.primaryColor,
-            size: widgetSize / 2,
+            size: widgetSize / 2 - 3,
+            semanticLabel: context.t.new_version_available,
           ),
         ),
         backgroundColor: Colors.transparent,
@@ -164,8 +153,17 @@ class _ProfileIndicator extends ConsumerWidget {
         child: user == null
             ? const Icon(Icons.face_outlined, size: widgetSize)
             : Semantics(
-                label: "logged_in_as".tr(namedArgs: {"user": user.name}),
-                child: AbsorbPointer(child: UserCircleAvatar(radius: 17, size: 31, user: user)),
+                label: context.t.logged_in_as(user: user.name),
+                child: AbsorbPointer(
+                  child: Builder(
+                    builder: (context) => UserCircleAvatar(
+                      size: 34,
+                      user: user,
+                      opacity: IconTheme.of(context).opacity ?? 1,
+                      hasBorder: true,
+                    ),
+                  ),
+                ),
               ),
       ),
     );
@@ -179,12 +177,19 @@ class _BackupIndicator extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final indicatorIcon = _getBackupBadgeIcon(context, ref);
+    final backupEnabled = ref.watch(appConfigProvider.select((c) => c.backup.enabled));
+    final hasError = ref.watch(backupProvider.select((state) => state.error != BackupError.none));
+    final isUploading = ref.watch(backupProvider.select((state) => state.uploadItems.isNotEmpty));
+    final indicatorIcon = _getBackupBadgeIcon(
+      context,
+      backupEnabled: backupEnabled,
+      hasError: hasError,
+      isUploading: isUploading,
+    );
 
-    return InkWell(
-      onTap: () => context.pushRoute(const DriftBackupRoute()),
-      borderRadius: const BorderRadius.all(Radius.circular(12)),
-      child: Badge(
+    return IconButton(
+      onPressed: () => context.pushRoute(const BackupRoute()),
+      icon: Badge(
         label: indicatorIcon,
         backgroundColor: Colors.transparent,
         alignment: Alignment.bottomRight,
@@ -195,65 +200,59 @@ class _BackupIndicator extends ConsumerWidget {
     );
   }
 
-  Widget? _getBackupBadgeIcon(BuildContext context, WidgetRef ref) {
-    final backupStateStream = ref.watch(settingsProvider).watch(Setting.enableBackup);
-    final hasError = ref.watch(driftBackupProvider.select((state) => state.error != BackupError.none));
+  Widget? _getBackupBadgeIcon(
+    BuildContext context, {
+    required bool backupEnabled,
+    required bool hasError,
+    required bool isUploading,
+  }) {
     final isDarkTheme = context.isDarkTheme;
     final iconColor = isDarkTheme ? Colors.white : Colors.black;
-    final isUploading = ref.watch(driftBackupProvider.select((state) => state.uploadItems.isNotEmpty));
 
-    return StreamBuilder(
-      stream: backupStateStream,
-      initialData: false,
-      builder: (ctx, snapshot) {
-        final backupEnabled = snapshot.data ?? false;
+    if (!backupEnabled) {
+      return _BadgeLabel(
+        Icon(
+          Icons.cloud_off_rounded,
+          size: 9,
+          color: iconColor,
+          semanticLabel: context.t.backup_controller_page_backup,
+        ),
+      );
+    }
 
-        if (!backupEnabled) {
-          return _BadgeLabel(
-            Icon(
-              Icons.cloud_off_rounded,
-              size: 9,
-              color: iconColor,
-              semanticLabel: 'backup_controller_page_backup'.tr(),
+    if (hasError) {
+      return _BadgeLabel(
+        Icon(
+          Icons.warning_rounded,
+          size: 12,
+          color: context.colorScheme.error,
+          semanticLabel: context.t.backup_controller_page_backup,
+        ),
+        backgroundColor: context.colorScheme.errorContainer,
+      );
+    }
+
+    if (isUploading) {
+      return _BadgeLabel(
+        Container(
+          padding: const EdgeInsets.all(3.5),
+          child: Theme(
+            data: context.themeData.copyWith(
+              progressIndicatorTheme: context.themeData.progressIndicatorTheme.copyWith(year2023: true),
             ),
-          );
-        }
-
-        if (hasError) {
-          return _BadgeLabel(
-            Icon(
-              Icons.warning_rounded,
-              size: 12,
-              color: context.colorScheme.error,
-              semanticLabel: 'backup_controller_page_backup'.tr(),
+            child: CircularProgressIndicator(
+              strokeWidth: 2,
+              strokeCap: StrokeCap.round,
+              valueColor: AlwaysStoppedAnimation<Color>(iconColor),
+              semanticsLabel: context.t.backup_controller_page_backup,
             ),
-            backgroundColor: context.colorScheme.errorContainer,
-          );
-        }
+          ),
+        ),
+      );
+    }
 
-        if (isUploading) {
-          return _BadgeLabel(
-            Container(
-              padding: const EdgeInsets.all(3.5),
-              child: Theme(
-                data: context.themeData.copyWith(
-                  progressIndicatorTheme: context.themeData.progressIndicatorTheme.copyWith(year2023: true),
-                ),
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  strokeCap: StrokeCap.round,
-                  valueColor: AlwaysStoppedAnimation<Color>(iconColor),
-                  semanticsLabel: 'backup_controller_page_backup'.tr(),
-                ),
-              ),
-            ),
-          );
-        }
-
-        return _BadgeLabel(
-          Icon(Icons.check_outlined, size: 9, color: iconColor, semanticLabel: 'backup_controller_page_backup'.tr()),
-        );
-      },
+    return _BadgeLabel(
+      Icon(Icons.check_outlined, size: 9, color: iconColor, semanticLabel: context.t.backup_controller_page_backup),
     );
   }
 }
@@ -266,12 +265,14 @@ class _BadgeLabel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final opacity = IconTheme.of(context).opacity ?? 1;
+
     return Container(
       width: _kBadgeWidgetSize / 2,
       height: _kBadgeWidgetSize / 2,
       decoration: BoxDecoration(
-        color: backgroundColor ?? context.colorScheme.surfaceContainer,
-        border: Border.all(color: context.colorScheme.outline.withValues(alpha: .3)),
+        color: (backgroundColor ?? context.colorScheme.surfaceContainer).withValues(alpha: opacity),
+        border: Border.all(color: context.colorScheme.outline.withValues(alpha: .3 * opacity)),
         borderRadius: BorderRadius.circular(_kBadgeWidgetSize / 2),
       ),
       child: indicator,
@@ -319,13 +320,13 @@ class _SyncStatusIndicatorState extends ConsumerState<_SyncStatusIndicator> with
     // Control animations based on sync status
     if (isSyncing) {
       if (!_rotationController.isAnimating) {
-        _rotationController.repeat();
+        unawaited(_rotationController.repeat());
       }
       _dismissalController.reset();
     } else {
       _rotationController.stop();
       if (_dismissalController.status == AnimationStatus.dismissed) {
-        _dismissalController.forward();
+        unawaited(_dismissalController.forward());
       }
     }
 
@@ -334,23 +335,30 @@ class _SyncStatusIndicatorState extends ConsumerState<_SyncStatusIndicator> with
       return const SizedBox.shrink();
     }
 
-    return AnimatedBuilder(
-      animation: Listenable.merge([_rotationAnimation, _dismissalAnimation]),
-      builder: (context, child) {
-        return Padding(
-          padding: EdgeInsets.only(right: isSyncing ? 16 : 0),
-          child: Transform.scale(
-            scale: isSyncing ? 1.0 : _dismissalAnimation.value,
-            child: Opacity(
-              opacity: isSyncing ? 1.0 : _dismissalAnimation.value,
-              child: Transform.rotate(
-                angle: _rotationAnimation.value * 2 * 3.14159 * -1, // Rotate counter-clockwise
-                child: Icon(Icons.sync, size: 24, color: context.primaryColor),
-              ),
-            ),
-          ),
-        );
-      },
+    return Padding(
+      padding: const EdgeInsets.all(8),
+      child: TweenAnimationBuilder<double>(
+        tween: Tween(end: IconTheme.of(context).opacity ?? 1),
+        duration: kThemeChangeDuration,
+        builder: (context, opacity, child) {
+          return AnimatedBuilder(
+            animation: Listenable.merge([_rotationAnimation, _dismissalAnimation]),
+            builder: (context, child) {
+              final dismissalValue = isSyncing ? 1.0 : _dismissalAnimation.value;
+              return IconTheme(
+                data: IconTheme.of(context).copyWith(opacity: opacity * dismissalValue),
+                child: Transform(
+                  alignment: Alignment.center,
+                  transform: Matrix4.identity()
+                    ..scaleByDouble(dismissalValue, dismissalValue, dismissalValue, 1.0)
+                    ..rotateZ(-_rotationAnimation.value * 2 * math.pi),
+                  child: const Icon(Icons.sync),
+                ),
+              );
+            },
+          );
+        },
+      ),
     );
   }
 }

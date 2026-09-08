@@ -2,14 +2,14 @@ import { getQueueToken } from '@nestjs/bullmq';
 import { Injectable } from '@nestjs/common';
 import { ModuleRef, Reflector } from '@nestjs/core';
 import { JobsOptions, Queue, Worker } from 'bullmq';
-import { ClassConstructor } from 'class-transformer';
 import { setTimeout } from 'node:timers/promises';
 import { JobConfig } from 'src/decorators';
-import { JobName, JobStatus, MetadataKey, QueueCleanType, QueueName } from 'src/enum';
+import { QueueJobResponseDto, QueueJobSearchDto } from 'src/dtos/queue.dto';
+import { ImmichWorker, JobName, JobStatus, MetadataKey, QueueCleanType, QueueJobStatus, QueueName } from 'src/enum';
 import { ConfigRepository } from 'src/repositories/config.repository';
 import { EventRepository } from 'src/repositories/event.repository';
 import { LoggingRepository } from 'src/repositories/logging.repository';
-import { JobCounts, JobItem, JobOf, QueueStatus } from 'src/types';
+import { JobCounts, JobItem, JobOf } from 'src/types';
 import { getKeyByValue, getMethodNames, ImmichStartupError } from 'src/utils/misc';
 
 type JobMapItem = {
@@ -19,10 +19,14 @@ type JobMapItem = {
   label: string;
 };
 
+const WORKER_WATCH_INTERVAL_MS = 30_000;
+
 @Injectable()
 export class JobRepository {
   private workers: Partial<Record<QueueName, Worker>> = {};
   private handlers: Partial<Record<JobName, JobMapItem>> = {};
+  private workerWatcher?: ReturnType<typeof setInterval>;
+  private microservicesPresent = true;
 
   constructor(
     private moduleRef: ModuleRef,
@@ -33,7 +37,7 @@ export class JobRepository {
     this.logger.setContext(JobRepository.name);
   }
 
-  setup(services: ClassConstructor<unknown>[]) {
+  setup(services: (new (...args: any[]) => unknown)[]) {
     const reflector = this.moduleRef.get(Reflector, { strict: false });
 
     // discovery
@@ -50,11 +54,11 @@ export class JobRepository {
         const label = `${Service.name}.${handler.name}`;
 
         // one handler per job
-        if (this.handlers[jobName]) {
+        if (Object.hasOwn(this.handlers, jobName)) {
           const jobKey = getKeyByValue(JobName, jobName);
           const errorMessage = `Failed to add job handler for ${label}`;
           this.logger.error(
-            `${errorMessage}. JobName.${jobKey} is already handled by ${this.handlers[jobName].label}.`,
+            `${errorMessage}. JobName.${jobKey} is already handled by ${this.handlers[jobName]!.label}.`,
           );
           throw new ImmichStartupError(errorMessage);
         }
@@ -90,9 +94,44 @@ export class JobRepository {
       this.workers[queueName] = new Worker(
         queueName,
         (job) => this.eventRepository.emit('JobRun', queueName, job as JobItem),
-        { ...bull.config, concurrency: 1 },
+        { ...bull.config, concurrency: 1, name: ImmichWorker.Microservices },
       );
     }
+  }
+
+  watchWorkers() {
+    this.workerWatcher ??= setInterval(() => void this.checkWorkers(), WORKER_WATCH_INTERVAL_MS);
+  }
+
+  teardown() {
+    if (!this.workerWatcher) {
+      return;
+    }
+
+    clearInterval(this.workerWatcher);
+    this.workerWatcher = undefined;
+  }
+
+  private async checkWorkers() {
+    let isPresent: boolean;
+    try {
+      const suffix = `:w:${ImmichWorker.Microservices}`;
+      const workers = await this.getQueue(QueueName.BackgroundTask).getWorkers();
+      isPresent = workers.some((worker) => worker.rawname?.endsWith(suffix));
+    } catch {
+      return;
+    }
+
+    if (this.microservicesPresent !== isPresent) {
+      if (isPresent) {
+        this.logger.log('Microservices worker connected.');
+      } else {
+        this.logger.warn(
+          'No microservices worker is connected. Background jobs will not be processed until one is running.',
+        );
+      }
+    }
+    this.microservicesPresent = isPresent;
   }
 
   async run({ name, data }: JobItem) {
@@ -115,13 +154,14 @@ export class JobRepository {
     worker.concurrency = concurrency;
   }
 
-  async getQueueStatus(name: QueueName): Promise<QueueStatus> {
+  async isActive(name: QueueName): Promise<boolean> {
     const queue = this.getQueue(name);
+    const count = await queue.getActiveCount();
+    return count > 0;
+  }
 
-    return {
-      isActive: !!(await queue.getActiveCount()),
-      isPaused: await queue.isPaused(),
-    };
+  async isPaused(name: QueueName): Promise<boolean> {
+    return this.getQueue(name).isPaused();
   }
 
   pause(name: QueueName) {
@@ -170,11 +210,11 @@ export class JobRepository {
         options: this.getJobOptions(item) || undefined,
       } as JobItem & { data: any; options: JobsOptions | undefined };
 
-      if (job.options?.jobId) {
-        // need to use add() instead of addBulk() for jobId deduplication
+      if (job.options?.jobId || job.options?.deduplication) {
+        // need to use add() instead of addBulk() for jobId/deduplication to take effect
         promises.push(this.getQueue(queueName).add(item.name, item.data, job.options));
       } else {
-        itemsByQueue[queueName] = itemsByQueue[queueName] || [];
+        itemsByQueue[queueName] ||= [];
         itemsByQueue[queueName].push(job);
       }
     }
@@ -192,15 +232,26 @@ export class JobRepository {
   }
 
   async waitForQueueCompletion(...queues: QueueName[]): Promise<void> {
-    let activeQueue: QueueStatus | undefined;
-    do {
-      const statuses = await Promise.all(queues.map((name) => this.getQueueStatus(name)));
-      activeQueue = statuses.find((status) => status.isActive);
-    } while (activeQueue);
-    {
-      this.logger.verbose(`Waiting for ${activeQueue} queue to stop...`);
+    const getPending = async () => {
+      const results = await Promise.all(queues.map(async (name) => ({ pending: await this.isActive(name), name })));
+      return results.filter(({ pending }) => pending).map(({ name }) => name);
+    };
+
+    let pending = await getPending();
+
+    while (pending.length > 0) {
+      this.logger.verbose(`Waiting for ${pending[0]} queue to stop...`);
       await setTimeout(1000);
+      pending = await getPending();
     }
+  }
+
+  async searchJobs(name: QueueName, dto: QueueJobSearchDto): Promise<QueueJobResponseDto[]> {
+    const jobs = await this.getQueue(name).getJobs(dto.status ?? Object.values(QueueJobStatus), 0, 1000);
+    return jobs.map((job) => {
+      const { id, name, timestamp, data } = job;
+      return { id, name: name as JobName, timestamp, data };
+    });
   }
 
   private getJobOptions(item: JobItem): JobsOptions | null {
@@ -218,7 +269,13 @@ export class JobRepository {
         return { priority: 1 };
       }
       case JobName.FacialRecognitionQueueAll: {
-        return { jobId: JobName.FacialRecognitionQueueAll };
+        return { deduplication: { id: JobName.FacialRecognitionQueueAll } };
+      }
+      case JobName.VersionCheck: {
+        return { deduplication: { id: JobName.VersionCheck } };
+      }
+      case JobName.DatabaseBackup: {
+        return { deduplication: { id: JobName.DatabaseBackup } };
       }
       default: {
         return null;

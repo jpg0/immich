@@ -1,22 +1,23 @@
+import 'dart:async';
+
 import 'package:auto_route/auto_route.dart';
 import 'package:flutter/material.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:immich_mobile/domain/models/memory.model.dart';
-import 'package:immich_mobile/extensions/translate_extensions.dart';
+import 'package:immich_mobile/generated/translations.g.dart';
+import 'package:immich_mobile/presentation/pages/memory.page.dart';
 import 'package:immich_mobile/presentation/widgets/images/thumbnail.widget.dart';
-import 'package:immich_mobile/providers/asset_viewer/video_player_value_provider.dart';
 import 'package:immich_mobile/providers/haptic_feedback.provider.dart';
-import 'package:immich_mobile/providers/infrastructure/asset_viewer/current_asset.provider.dart';
 import 'package:immich_mobile/providers/infrastructure/memory.provider.dart';
 import 'package:immich_mobile/routing/router.dart';
 
-class DriftMemoryLane extends ConsumerWidget {
-  const DriftMemoryLane({super.key});
+class MemoryLane extends ConsumerWidget {
+  const MemoryLane({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final memoryLaneProvider = ref.watch(driftMemoryFutureProvider);
-    final memories = memoryLaneProvider.value ?? const [];
+    final memoryLane = ref.watch(memoryLaneProvider);
+    final memories = memoryLane.value ?? const [];
     if (memories.isEmpty) {
       return const SizedBox.shrink();
     }
@@ -31,35 +32,26 @@ class DriftMemoryLane extends ConsumerWidget {
         overlayColor: WidgetStateProperty.all(Colors.white.withValues(alpha: 0.1)),
         onTap: (index) {
           ref.read(hapticFeedbackProvider.notifier).heavyImpact();
-
           if (memories[index].assets.isNotEmpty) {
-            final asset = memories[index].assets[0];
-            ref.read(currentAssetNotifier.notifier).setAsset(asset);
-
-            if (asset.isVideo) {
-              ref.read(videoPlaybackValueProvider.notifier).reset();
-            }
+            MemoryPage.setMemory(ref, memories[index]);
           }
-
-          context.pushRoute(DriftMemoryRoute(memories: memories, memoryIndex: index));
+          unawaited(context.pushRoute(MemoryRoute(memories: memories, memoryIndex: index)));
         },
-        children: memories
-            .map((memory) => DriftMemoryCard(key: Key(memory.id), memory: memory))
-            .toList(growable: false),
+        children: memories.map((memory) => MemoryCard(key: Key(memory.id), memory: memory)).toList(growable: false),
       ),
     );
   }
 }
 
-class DriftMemoryCard extends ConsumerWidget {
-  const DriftMemoryCard({super.key, required this.memory});
+class MemoryCard extends StatelessWidget {
+  const MemoryCard({super.key, required this.memory});
 
-  final DriftMemory memory;
+  final Memory memory;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final yearsAgo = DateTime.now().year - memory.data.year;
-    final title = 'years_ago'.t(context: context, args: {'years': yearsAgo.toString()});
+    final title = context.t.years_ago(years: yearsAgo);
     return Center(
       child: Stack(
         children: [
@@ -68,7 +60,11 @@ class DriftMemoryCard extends ConsumerWidget {
             child: SizedBox(
               width: 205,
               height: 200,
-              child: Thumbnail.remote(remoteId: memory.assets[0].id, fit: BoxFit.cover),
+              child: Thumbnail.remote(
+                remoteId: memory.assets[0].id,
+                thumbhash: memory.assets[0].thumbHash ?? "",
+                fit: BoxFit.cover,
+              ),
             ),
           ),
           Positioned(

@@ -1,64 +1,77 @@
-import 'dart:math';
-
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
-import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:immich_mobile/domain/models/store.model.dart';
 import 'package:immich_mobile/domain/models/user.model.dart';
 import 'package:immich_mobile/entities/store.entity.dart';
-import 'package:immich_mobile/services/api.service.dart';
-import 'package:immich_mobile/widgets/common/transparent_image.dart';
+import 'package:immich_mobile/presentation/widgets/images/remote_image_provider.dart';
 
-// ignore: must_be_immutable
-class UserCircleAvatar extends ConsumerWidget {
+class UserCircleAvatar extends StatelessWidget {
   final UserDto user;
-  double radius;
-  double size;
-  bool hasBorder;
+  final double size;
+  final bool hasBorder;
+  final double opacity;
 
-  UserCircleAvatar({super.key, this.radius = 22, this.size = 44, this.hasBorder = false, required this.user});
+  const UserCircleAvatar({super.key, this.size = 44, this.hasBorder = false, this.opacity = 1, required this.user});
+
+  // TODO(shenlong): Remove this factory when the UserDto is removed from the domain layer
+  factory UserCircleAvatar.fromUser({
+    required User user,
+    double size = 44,
+    bool hasBorder = false,
+    double opacity = 1,
+  }) => .new(
+    user: .new(
+      id: user.id,
+      email: user.email,
+      name: user.name,
+      profileChangedAt: user.profileChangedAt,
+      hasProfileImage: user.hasProfileImage,
+      avatarColor: user.avatarColor,
+    ),
+    size: size,
+    hasBorder: hasBorder,
+    opacity: opacity,
+  );
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final userAvatarColor = user.avatarColor.toColor();
+  Widget build(BuildContext context) {
+    final userAvatarColor = user.avatarColor.toColor().withValues(alpha: opacity);
     final profileImageUrl =
-        '${Store.get(StoreKey.serverEndpoint)}/users/${user.id}/profile-image?d=${Random().nextInt(1024)}';
+        '${Store.get(StoreKey.serverEndpoint)}/users/${user.id}/profile-image?d=${user.profileChangedAt.millisecondsSinceEpoch}';
+
+    final textColor = (user.avatarColor.toColor().computeLuminance() > 0.5 ? Colors.black : Colors.white).withValues(
+      alpha: opacity,
+    );
 
     final textIcon = DefaultTextStyle(
-      style: TextStyle(
-        fontWeight: FontWeight.bold,
-        fontSize: 12,
-        color: userAvatarColor.computeLuminance() > 0.5 ? Colors.black : Colors.white,
-      ),
+      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: textColor),
       child: Text(user.name[0].toUpperCase()),
     );
 
     return Tooltip(
       message: user.name,
-      child: Container(
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          border: hasBorder ? Border.all(color: Colors.grey[500]!, width: 1) : null,
-        ),
-        child: CircleAvatar(
-          backgroundColor: userAvatarColor,
-          radius: radius,
+      child: UnconstrainedBox(
+        child: Container(
+          width: size,
+          height: size,
+          decoration: BoxDecoration(
+            color: userAvatarColor,
+            shape: BoxShape.circle,
+            border: hasBorder ? Border.all(color: userAvatarColor.withValues(alpha: opacity), width: 1.5) : null,
+          ),
           child: user.hasProfileImage
               ? ClipRRect(
-                  borderRadius: const BorderRadius.all(Radius.circular(50)),
-                  child: CachedNetworkImage(
+                  borderRadius: BorderRadius.all(Radius.circular(size / 2)),
+                  child: Image(
                     fit: BoxFit.cover,
-                    cacheKey: '${user.id}-${user.profileChangedAt.toIso8601String()}',
                     width: size,
                     height: size,
-                    placeholder: (_, __) => Image.memory(kTransparentImage),
-                    imageUrl: profileImageUrl,
-                    httpHeaders: ApiService.getRequestHeaders(),
-                    fadeInDuration: const Duration(milliseconds: 300),
-                    errorWidget: (context, error, stackTrace) => textIcon,
+                    image: RemoteImageProvider(url: profileImageUrl),
+                    errorBuilder: (context, error, stackTrace) => textIcon,
+                    color: Colors.white.withValues(alpha: opacity),
+                    colorBlendMode: BlendMode.modulate,
                   ),
                 )
-              : textIcon,
+              : Center(child: textIcon),
         ),
       ),
     );

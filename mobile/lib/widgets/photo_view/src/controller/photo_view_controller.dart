@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/widgets.dart';
 import 'package:immich_mobile/widgets/photo_view/src/utils/ignorable_change_notifier.dart';
+import 'package:immich_mobile/widgets/photo_view/src/utils/photo_view_utils.dart';
 
 /// The interface in which controllers will be implemented.
 ///
@@ -61,6 +62,9 @@ abstract class PhotoViewControllerBase<T extends PhotoViewControllerValue> {
 
   /// The scale factor to transform the child (image or a customChild).
   late double? scale;
+
+  double? get initialScale;
+  ScaleBoundaries? scaleBoundaries;
 
   /// Nevermind this method :D, look away
   void setScaleInvisibly(double? scale);
@@ -141,6 +145,9 @@ class PhotoViewController implements PhotoViewControllerBase<PhotoViewController
 
   late StreamController<PhotoViewControllerValue> _outputCtrl;
 
+  @override
+  ScaleBoundaries? scaleBoundaries;
+
   late void Function(Offset)? _animatePosition;
   late void Function(double)? _animateScale;
   late void Function(double)? _animateRotation;
@@ -202,7 +209,7 @@ class PhotoViewController implements PhotoViewControllerBase<PhotoViewController
 
   @override
   void dispose() {
-    _outputCtrl.close();
+    unawaited(_outputCtrl.close());
     _valueNotifier.dispose();
   }
 
@@ -311,4 +318,7 @@ class PhotoViewController implements PhotoViewControllerBase<PhotoViewController
     }
     _valueNotifier.value = newValue;
   }
+
+  @override
+  double? get initialScale => scaleBoundaries?.initialScale ?? initial.scale;
 }

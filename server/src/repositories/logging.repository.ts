@@ -2,7 +2,7 @@ import { ConsoleLogger, Inject, Injectable, Scope } from '@nestjs/common';
 import { isLogLevelEnabled } from '@nestjs/common/services/utils/is-log-level-enabled.util';
 import { ClsService } from 'nestjs-cls';
 import { Telemetry } from 'src/decorators';
-import { LogLevel } from 'src/enum';
+import { LogFormat, LogLevel } from 'src/enum';
 import { ConfigRepository } from 'src/repositories/config.repository';
 
 type LogDetails = any;
@@ -27,10 +27,12 @@ export class MyConsoleLogger extends ConsoleLogger {
 
   constructor(
     private cls: ClsService | undefined,
-    options?: { color?: boolean; context?: string },
+    options?: { json?: boolean; color?: boolean; context?: string },
   ) {
-    super(options?.context || MyConsoleLogger.name);
-    this.isColorEnabled = options?.color || false;
+    super(options?.context || MyConsoleLogger.name, {
+      json: options?.json ?? false,
+    });
+    this.isColorEnabled = !options?.json && (options?.color || false);
   }
 
   isLevelEnabled(level: LogLevel) {
@@ -65,7 +67,7 @@ export class MyConsoleLogger extends ConsoleLogger {
   };
 
   private withColor(text: string, color: LogColor) {
-    return this.isColorEnabled ? `\u001B[${color}m${text}\u001B[39m` : text;
+    return this.isColorEnabled ? `\u{1B}[${color}m${text}\u{1B}[39m` : text;
   }
 }
 
@@ -78,11 +80,18 @@ export class LoggingRepository {
     @Inject(ClsService) cls: ClsService | undefined,
     @Inject(ConfigRepository) configRepository: ConfigRepository | undefined,
   ) {
-    let noColor = false;
+    let isNoColor = false;
+    let logFormat = LogFormat.Console;
     if (configRepository) {
-      noColor = configRepository.getEnv().noColor;
+      const env = configRepository.getEnv();
+      isNoColor = env.noColor;
+      logFormat = env.logFormat ?? logFormat;
     }
-    this.logger = new MyConsoleLogger(cls, { context: LoggingRepository.name, color: !noColor });
+    this.logger = new MyConsoleLogger(cls, {
+      context: LoggingRepository.name,
+      json: logFormat === LogFormat.Json,
+      color: !isNoColor,
+    });
   }
 
   static create(context?: string) {
@@ -108,6 +117,10 @@ export class LoggingRepository {
 
   setLogLevel(level: LogLevel | false): void {
     logLevels = level ? LOG_LEVELS.slice(LOG_LEVELS.indexOf(level)) : [];
+  }
+
+  getLogLevel(): LogLevel {
+    return logLevels[0] || LogLevel.Fatal;
   }
 
   verbose(message: string, ...details: LogDetails) {

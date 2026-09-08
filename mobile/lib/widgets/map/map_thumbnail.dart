@@ -2,12 +2,11 @@ import 'dart:math';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
-import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:immich_mobile/extensions/asyncvalue_extensions.dart';
 import 'package:immich_mobile/extensions/build_context_extensions.dart';
 import 'package:immich_mobile/extensions/maplibrecontroller_extensions.dart';
+import 'package:immich_mobile/widgets/map/asset_marker_icon.dart';
 import 'package:immich_mobile/widgets/map/map_theme_override.dart';
-import 'package:immich_mobile/widgets/map/positioned_asset_marker_icon.dart';
 import 'package:maplibre_gl/maplibre_gl.dart';
 
 /// A non-interactive thumbnail of a map in the given coordinates with optional markers
@@ -15,10 +14,11 @@ import 'package:maplibre_gl/maplibre_gl.dart';
 /// User can provide either a [assetMarkerRemoteId] to display the asset's thumbnail or set
 /// [showMarkerPin] to true which would display a marker pin instead. If both are provided,
 /// [assetMarkerRemoteId] will take precedence
-class MapThumbnail extends HookConsumerWidget {
+class MapThumbnail extends HookWidget {
   final Function(Point<double>, LatLng)? onTap;
   final LatLng centre;
   final String? assetMarkerRemoteId;
+  final String? assetThumbhash;
   final bool showMarkerPin;
   final double zoom;
   final double height;
@@ -35,6 +35,7 @@ class MapThumbnail extends HookConsumerWidget {
     this.onTap,
     this.zoom = 8,
     this.assetMarkerRemoteId,
+    this.assetThumbhash,
     this.showMarkerPin = false,
     this.themeMode,
     this.showAttribution = true,
@@ -42,22 +43,13 @@ class MapThumbnail extends HookConsumerWidget {
   });
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final offsettedCentre = LatLng(centre.latitude + 0.002, centre.longitude);
+  Widget build(BuildContext context) {
     final controller = useRef<MapLibreMapController?>(null);
     final styleLoaded = useState(false);
-    final position = useValueNotifier<Point<num>?>(null);
 
     Future<void> onMapCreated(MapLibreMapController mapController) async {
       controller.value = mapController;
       styleLoaded.value = false;
-      if (assetMarkerRemoteId != null) {
-        // The iOS impl returns wrong toScreenLocation without the delay
-        Future.delayed(
-          const Duration(milliseconds: 100),
-          () async => position.value = await mapController.toScreenLocation(centre),
-        );
-      }
       onCreated?.call(mapController);
     }
 
@@ -88,11 +80,11 @@ class MapThumbnail extends HookConsumerWidget {
         child: ClipRRect(
           borderRadius: const BorderRadius.all(Radius.circular(15)),
           child: Stack(
-            alignment: Alignment.center,
+            alignment: AlignmentGeometry.topCenter,
             children: [
               style.widgetWhen(
                 onData: (style) => MapLibreMap(
-                  initialCameraPosition: CameraPosition(target: offsettedCentre, zoom: zoom),
+                  initialCameraPosition: CameraPosition(target: centre, zoom: zoom),
                   styleString: style,
                   onMapCreated: onMapCreated,
                   onStyleLoadedCallback: onStyleLoaded,
@@ -107,12 +99,16 @@ class MapThumbnail extends HookConsumerWidget {
                   attributionButtonMargins: showAttribution == false ? const Point(-100, 0) : null,
                 ),
               ),
-              ValueListenableBuilder(
-                valueListenable: position,
-                builder: (_, value, __) => value != null && assetMarkerRemoteId != null
-                    ? PositionedAssetMarkerIcon(size: height / 2, point: value, assetRemoteId: assetMarkerRemoteId!)
-                    : const SizedBox.shrink(),
-              ),
+              if (assetMarkerRemoteId != null && assetThumbhash != null)
+                Container(
+                  width: width,
+                  height: height / 2,
+                  alignment: Alignment.bottomCenter,
+                  child: SizedBox.square(
+                    dimension: height / 2.5,
+                    child: AssetMarkerIcon(id: assetMarkerRemoteId!, thumbhash: assetThumbhash!),
+                  ),
+                ),
             ],
           ),
         ),

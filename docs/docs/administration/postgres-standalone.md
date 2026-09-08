@@ -10,16 +10,19 @@ Running with a pre-existing Postgres server can unlock powerful administrative f
 
 ## Prerequisites
 
-You must install `pgvector` (`>= 0.7.0, < 1.0.0`), as it is a prerequisite for `vchord`.
+You must install pgvector as it is a prerequisite for VectorChord.
 The easiest way to do this on Debian/Ubuntu is by adding the [PostgreSQL Apt repository][pg-apt] and then
 running `apt install postgresql-NN-pgvector`, where `NN` is your Postgres version (e.g., `16`).
 
 You must install VectorChord into your instance of Postgres using their [instructions][vchord-install]. After installation, add `shared_preload_libraries = 'vchord.so'` to your `postgresql.conf`. If you already have some `shared_preload_libraries` set, you can separate each extension with a comma. For example, `shared_preload_libraries = 'pg_stat_statements, vchord.so'`.
 
-:::note
-Immich is known to work with Postgres versions `>= 14, < 18`.
+:::note Supported versions
+Immich is known to work with Postgres versions `>= 14, < 20`.
 
-Make sure the installed version of VectorChord is compatible with your version of Immich. The current accepted range for VectorChord is `>= 0.3.0, < 0.5.0`.
+VectorChord is known to work with pgvector versions `>= 0.7, < 0.9`.
+
+The Immich server will check the VectorChord version on startup to ensure compatibility, and refuse to start if a compatible version is not found.
+The current accepted range for VectorChord is `>= 0.3, < 2.0`.
 :::
 
 ## Specifying the connection URL
@@ -78,14 +81,14 @@ VectorChord is the successor extension to pgvecto.rs, allowing for higher perfor
 
 ### Migrating from pgvecto.rs
 
-Support for pgvecto.rs will be dropped in a later release, hence we recommend all users currently using pgvecto.rs to migrate to VectorChord at their convenience. There are two primary approaches to do so.
+Support for pgvecto.rs has been dropped as of 3.0, hence all users currently using pgvecto.rs should migrate to VectorChord. There are two primary approaches to do so.
 
 The easiest option is to have both extensions installed during the migration:
 
 <details>
 <summary>Migration steps (automatic)</summary>
 1. Ensure you still have pgvecto.rs installed
-2. Install `pgvector` (`>= 0.7.0, < 1.0.0`). The easiest way to do this is on Debian/Ubuntu by adding the [PostgreSQL Apt repository][pg-apt] and then running `apt install postgresql-NN-pgvector`, where `NN` is your Postgres version (e.g., `16`)
+2. Install `pgvector` (`>= 0.7, < 0.9`). The easiest way to do this is on Debian/Ubuntu by adding the [PostgreSQL Apt repository][pg-apt] and then running `apt install postgresql-NN-pgvector`, where `NN` is your Postgres version (e.g., `16`)
 3. [Install VectorChord][vchord-install]
 4. Add `shared_preload_libraries= 'vchord.so, vectors.so'` to your `postgresql.conf`, making sure to include _both_ `vchord.so` and `vectors.so`. You may include other libraries here as well if needed
 5. Restart the Postgres database
@@ -141,7 +144,7 @@ ALTER TABLE face_search ALTER COLUMN embedding SET DATA TYPE vector(512);
 
 <details>
 <summary>Migration steps</summary>
-1. Ensure you have at least 0.7.0 of pgvector installed. If it is below that, please upgrade it and run the SQL command `ALTER EXTENSION vector UPDATE;` using psql or your choice of database client
+1. Ensure you have at least `0.7.0` of pgvector installed. If it is below that, please upgrade it and run the SQL command `ALTER EXTENSION vector UPDATE;` using psql or your choice of database client
 2. Follow the Prerequisites to install VectorChord
 3. If Immich does not have superuser permissions, run the SQL command `CREATE EXTENSION vchord CASCADE;`
 4. Remove the `DB_VECTOR_EXTENSION=pgvector` environmental variable as it will make Immich still use pgvector if set

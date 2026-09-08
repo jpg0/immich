@@ -31,6 +31,16 @@
 .pub-cache/
 .pub/
 /build/
+lib/**/*.drift.dart
+lib/**/*.steps.dart
+lib/**/*.freezed.dart
+lib/routing/router.gr.dart
+test/drift/main/generated/
+
+# Pigeon related
+/lib/platform/*.g.dart
+/ios/**/*.g.swift
+/android/**/*.g.kt
 
 # Web related
 lib/generated_plugin_registrant.dart
@@ -55,8 +65,8 @@ default.isar
 default.isar.lock
 libisar.so
 
-# FVM Version
-.fvm/
-
 # Translation file
 lib/generated/
+
+# Flutter widget previews cache
+.widget_preview/
