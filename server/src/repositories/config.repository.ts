@@ -1,27 +1,28 @@
+import { DatabaseConnectionParams } from '@immich/sql-tools';
 import { RegisterQueueOptions } from '@nestjs/bullmq';
 import { Inject, Injectable, Optional } from '@nestjs/common';
 import { QueueOptions } from 'bullmq';
-import { plainToInstance } from 'class-transformer';
-import { validateSync } from 'class-validator';
 import { Request, Response } from 'express';
+import { HelmetOptions } from 'helmet';
 import { RedisOptions } from 'ioredis';
 import { CLS_ID, ClsModuleOptions } from 'nestjs-cls';
-import { OpenTelemetryModuleOptions } from 'nestjs-otel/lib/interfaces';
+import { OpenTelemetryModuleOptions } from 'nestjs-otel/lib/interfaces/index.js';
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { citiesFile, excludePaths, IWorker } from 'src/constants';
-import { Telemetry } from 'src/decorators';
-import { EnvDto } from 'src/dtos/env.dto';
+import { IWorker, citiesFile } from 'src/constants.js';
+import { Telemetry } from 'src/decorators.js';
+import { EnvSchema } from 'src/dtos/env.dto.js';
 import {
   DatabaseExtension,
   ImmichEnvironment,
   ImmichHeader,
   ImmichTelemetry,
   ImmichWorker,
+  LogFormat,
   LogLevel,
   QueueName,
-} from 'src/enum';
-import { DatabaseConnectionParams, VectorExtension } from 'src/types';
-import { setDifference } from 'src/utils/set';
+} from 'src/enum.js';
+import type { VectorExtension } from 'src/types.js';
 
 export interface EnvData {
   host?: string;
@@ -29,6 +30,7 @@ export interface EnvData {
   environment: ImmichEnvironment;
   configFile?: string;
   logLevel?: LogLevel;
+  logFormat?: LogFormat;
 
   buildMetadata: {
     build?: string;
@@ -55,6 +57,10 @@ export interface EnvData {
     config: ClsModuleOptions;
   };
 
+  helmet: {
+    config?: HelmetOptions;
+  };
+
   database: {
     config: DatabaseConnectionParams;
     skipMigrations: boolean;
@@ -64,6 +70,10 @@ export interface EnvData {
   licensePublicKey: {
     client: string;
     server: string;
+  };
+
+  versionCheck: {
+    url: string;
   };
 
   network: {
@@ -79,15 +89,21 @@ export interface EnvData {
       admin1: string;
       admin2: string;
       cities500: string;
+      countryInfo: string;
       naturalEarthCountriesPath: string;
     };
     web: {
       root: string;
       indexHtml: string;
     };
+    corePlugin: string;
   };
 
   redis: RedisOptions;
+
+  setup: {
+    allow: boolean;
+  };
 
   telemetry: {
     apiPort: number;
@@ -101,6 +117,13 @@ export interface EnvData {
   };
 
   workers: ImmichWorker[];
+
+  plugins: {
+    external: {
+      allow: boolean;
+      installFolder?: string;
+    };
+  };
 
   noColor: boolean;
   nodeVersion?: string;
@@ -128,20 +151,75 @@ const asSet = <T>(value: string | undefined, defaults: T[]) => {
   return new Set(values.length === 0 ? defaults : (values as T[]));
 };
 
+type CspOptions = Exclude<NonNullable<HelmetOptions['contentSecurityPolicy']>, boolean>;
+type CspDirectives = NonNullable<CspOptions['directives']>;
+
+export const applyCspHashes = (directives: CspDirectives, manifest: Record<string, string[]>): CspDirectives => {
+  const merged = { ...directives };
+  for (const [directive, hashes] of Object.entries(manifest)) {
+    const sources = merged[directive];
+    if (Array.isArray(sources) && !sources.includes(`'unsafe-inline'`)) {
+      merged[directive] = [...sources, ...hashes];
+    }
+  }
+
+  return merged;
+};
+
+const resolveHelmetFile = (helmetFile: 'true' | 'false' | string | undefined, webRoot: string) => {
+  // default is off
+  if (!helmetFile || helmetFile === 'false') {
+    return;
+  }
+
+  helmetFile = helmetFile === 'true' ? join(import.meta.dirname, '..', '..', 'helmet.json') : helmetFile;
+
+  let config: HelmetOptions;
+  try {
+    config = JSON.parse(readFileSync(helmetFile).toString()) as HelmetOptions;
+  } catch (error) {
+    throw new Error(`Failed to read helmet file: ${helmetFile}`, { cause: error });
+  }
+
+  const contentSecurityPolicy = config.contentSecurityPolicy;
+  if (!contentSecurityPolicy || typeof contentSecurityPolicy === 'boolean' || !contentSecurityPolicy.directives) {
+    return config;
+  }
+
+  // merge with csp build-time metadata
+  const manifestFile = join(webRoot, '.csp.json');
+
+  if (!existsSync(join(webRoot, 'index.html')) || !existsSync(manifestFile)) {
+    return config;
+  }
+
+  let manifest: Record<string, string[]>;
+  try {
+    manifest = JSON.parse(readFileSync(manifestFile).toString()) as Record<string, string[]>;
+  } catch (error) {
+    throw new Error(`Failed to read CSP manifest: ${manifestFile}`, { cause: error });
+  }
+
+  const directives = applyCspHashes(contentSecurityPolicy.directives, manifest);
+
+  return { ...config, contentSecurityPolicy: { ...contentSecurityPolicy, directives } };
+};
+
 const getEnv = (): EnvData => {
-  const dto = plainToInstance(EnvDto, process.env);
-  const errors = validateSync(dto);
-  if (errors.length > 0) {
-    const messages = [`Invalid environment variables: `];
-    for (const error of errors) {
-      messages.push(`  - ${error.property}=${error.value} (${Object.values(error.constraints || {}).join(', ')})`);
+  const parseResult = EnvSchema.safeParse(process.env);
+  if (!parseResult.success) {
+    const messages = ['Invalid environment variables: '];
+    for (const issue of parseResult.error.issues) {
+      const path = issue.path.join('.');
+      messages.push(`  - [${path}] ${issue.message}`);
     }
     throw new Error(messages.join('\n'));
   }
+  const dto = parseResult.data;
 
   const includedWorkers = asSet(dto.IMMICH_WORKERS_INCLUDE, [ImmichWorker.Api, ImmichWorker.Microservices]);
   const excludedWorkers = asSet(dto.IMMICH_WORKERS_EXCLUDE, []);
-  const workers = [...setDifference(includedWorkers, excludedWorkers)];
+  const workers = [...includedWorkers.difference(excludedWorkers)];
   for (const worker of workers) {
     if (!WORKER_TYPES.has(worker)) {
       throw new Error(`Invalid worker(s) found: ${workers.join(',')}`);
@@ -170,7 +248,7 @@ const getEnv = (): EnvData => {
     try {
       redisConfig = JSON.parse(Buffer.from(redisUrl.slice(10), 'base64').toString());
     } catch (error) {
-      throw new Error(`Failed to decode redis options: ${error}`);
+      throw new Error('Failed to decode redis options', { cause: error });
     }
   }
 
@@ -180,7 +258,7 @@ const getEnv = (): EnvData => {
       : asSet<ImmichTelemetry>(dto.IMMICH_TELEMETRY_INCLUDE, []);
 
   const excludedTelemetries = asSet<ImmichTelemetry>(dto.IMMICH_TELEMETRY_EXCLUDE, []);
-  const telemetries = setDifference(includedTelemetries, excludedTelemetries);
+  const telemetries = includedTelemetries.difference(excludedTelemetries);
   for (const telemetry of telemetries) {
     if (!TELEMETRY_TYPES.has(telemetry)) {
       throw new Error(`Invalid telemetry found: ${telemetry}`);
@@ -200,18 +278,16 @@ const getEnv = (): EnvData => {
       };
 
   let vectorExtension: VectorExtension | undefined;
-  switch (dto.DB_VECTOR_EXTENSION) {
-    case 'pgvector': {
-      vectorExtension = DatabaseExtension.Vector;
-      break;
-    }
-    case 'pgvecto.rs': {
-      vectorExtension = DatabaseExtension.Vectors;
-      break;
-    }
-    case 'vectorchord': {
-      vectorExtension = DatabaseExtension.VectorChord;
-      break;
+  if (dto.DB_VECTOR_EXTENSION) {
+    switch (dto.DB_VECTOR_EXTENSION) {
+      case 'pgvector': {
+        vectorExtension = DatabaseExtension.Vector;
+        break;
+      }
+      case 'vectorchord': {
+        vectorExtension = DatabaseExtension.VectorChord;
+        break;
+      }
     }
   }
 
@@ -221,6 +297,7 @@ const getEnv = (): EnvData => {
     environment,
     configFile: dto.IMMICH_CONFIG_FILE,
     logLevel: dto.IMMICH_LOG_LEVEL,
+    logFormat: dto.IMMICH_LOG_FORMAT || LogFormat.Console,
 
     buildMetadata: {
       build: dto.IMMICH_BUILD,
@@ -243,7 +320,7 @@ const getEnv = (): EnvData => {
         prefix: 'immich_bull',
         connection: { ...redisConfig },
         defaultJobOptions: {
-          attempts: 3,
+          attempts: 1,
           removeOnComplete: true,
           removeOnFail: false,
         },
@@ -257,11 +334,9 @@ const getEnv = (): EnvData => {
           mount: true,
           generateId: true,
           setup: (cls, req: Request, res: Response) => {
-            const headerValues = req.headers[ImmichHeader.Cid];
-            const headerValue = Array.isArray(headerValues) ? headerValues[0] : headerValues;
-            const cid = headerValue || cls.get(CLS_ID);
+            const cid = req.header(ImmichHeader.CorrelationId) || cls.get(CLS_ID);
             cls.set(CLS_ID, cid);
-            res.header(ImmichHeader.Cid, cid);
+            res.header(ImmichHeader.CorrelationId, cid);
           },
         },
       },
@@ -273,7 +348,15 @@ const getEnv = (): EnvData => {
       vectorExtension,
     },
 
+    helmet: {
+      config: resolveHelmetFile(dto.IMMICH_HELMET_FILE, folders.web),
+    },
+
     licensePublicKey: isProd ? productionKeys : stagingKeys,
+
+    versionCheck: {
+      url: isProd ? 'https://version.immich.cloud/version' : 'https://version.dev.immich.cloud/version',
+    },
 
     network: {
       trustedProxies: dto.IMMICH_TRUSTED_PROXIES ?? ['linklocal', 'uniquelocal'],
@@ -282,10 +365,6 @@ const getEnv = (): EnvData => {
     otel: {
       metrics: {
         hostMetrics: telemetries.has(ImmichTelemetry.Host),
-        apiMetrics: {
-          enable: telemetries.has(ImmichTelemetry.Api),
-          ignoreRoutes: excludePaths,
-        },
       },
     },
 
@@ -298,12 +377,18 @@ const getEnv = (): EnvData => {
         admin1: join(folders.geodata, 'admin1CodesASCII.txt'),
         admin2: join(folders.geodata, 'admin2Codes.txt'),
         cities500: join(folders.geodata, citiesFile),
+        countryInfo: join(folders.geodata, 'countryInfo.txt'),
         naturalEarthCountriesPath: join(folders.geodata, 'ne_10m_admin_0_countries.geojson'),
       },
       web: {
         root: folders.web,
         indexHtml: join(folders.web, 'index.html'),
       },
+      corePlugin: join(buildFolder, 'plugins', 'immich-plugin-core'),
+    },
+
+    setup: {
+      allow: dto.IMMICH_ALLOW_SETUP ?? true,
     },
 
     storage: {
@@ -318,6 +403,13 @@ const getEnv = (): EnvData => {
     },
 
     workers,
+
+    plugins: {
+      external: {
+        allow: dto.IMMICH_ALLOW_EXTERNAL_PLUGINS ?? false,
+        installFolder: dto.IMMICH_PLUGINS_INSTALL_FOLDER,
+      },
+    },
 
     noColor: !!dto.NO_COLOR,
   };
@@ -340,6 +432,10 @@ export class ConfigRepository {
 
   isDev() {
     return this.getEnv().environment === ImmichEnvironment.Development;
+  }
+
+  isProduction() {
+    return this.getEnv().environment === ImmichEnvironment.Production;
   }
 
   getWorker() {

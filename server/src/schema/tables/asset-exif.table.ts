@@ -1,8 +1,23 @@
-import { UpdatedAtTrigger, UpdateIdColumn } from 'src/decorators';
-import { AssetTable } from 'src/schema/tables/asset.table';
-import { Column, ForeignKeyColumn, Generated, Int8, Table, Timestamp, UpdateDateColumn } from 'src/sql-tools';
+import {
+  Column,
+  ForeignKeyColumn,
+  Index,
+  Int8,
+  Table,
+  Timestamp,
+  UpdateDateColumn,
+  type Generated,
+} from '@immich/sql-tools';
+import { LockableProperty } from 'src/database.js';
+import { UpdateIdColumn, UpdatedAtTrigger } from 'src/decorators.js';
+import { AssetTable } from 'src/schema/tables/asset.table.js';
 
 @Table('asset_exif')
+@Index({
+  name: 'IDX_asset_exif_gist_earthcoord',
+  using: 'gist',
+  expression: 'll_to_earth_public(latitude, longitude)',
+})
 @UpdatedAtTrigger('asset_exif_updatedAt')
 export class AssetExifTable {
   @ForeignKeyColumn(() => AssetTable, { onDelete: 'CASCADE', primary: true })
@@ -92,9 +107,15 @@ export class AssetExifTable {
   @Column({ type: 'integer', nullable: true })
   rating!: number | null;
 
+  @Column({ type: 'character varying', array: true, nullable: true })
+  tags!: string[] | null;
+
   @UpdateDateColumn({ default: () => 'clock_timestamp()' })
-  updatedAt!: Generated<Date>;
+  updatedAt!: Generated<Timestamp>;
 
   @UpdateIdColumn({ index: true })
   updateId!: Generated<string>;
+
+  @Column({ type: 'character varying', array: true, nullable: true })
+  lockedProperties!: Array<LockableProperty> | null;
 }

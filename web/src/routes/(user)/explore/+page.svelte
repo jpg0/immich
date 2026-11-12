@@ -1,16 +1,22 @@
 <script lang="ts">
-  import ImageThumbnail from '$lib/components/assets/thumbnail/image-thumbnail.svelte';
-  import UserPageLayout from '$lib/components/layouts/user-page-layout.svelte';
-  import EmptyPlaceholder from '$lib/components/shared-components/empty-placeholder.svelte';
-  import SingleGridRow from '$lib/components/shared-components/single-grid-row.svelte';
-  import { AppRoute } from '$lib/constants';
-  import { websocketEvents } from '$lib/stores/websocket';
-  import { getAssetThumbnailUrl, getPeopleThumbnailUrl } from '$lib/utils';
-  import { getMetadataSearchQuery } from '$lib/utils/metadata-search';
-  import { AssetMediaSize, type SearchExploreResponseDto } from '@immich/sdk';
-  import { Icon } from '@immich/ui';
-  import { mdiHeart } from '@mdi/js';
-  import { onMount } from 'svelte';
+  import OnEvents from '#lib/components/OnEvents.svelte';
+  import ImageThumbnail from '#lib/components/assets/thumbnail/ImageThumbnail.svelte';
+  import PersonIndicator from '#lib/components/faces-page/PersonIndicator.svelte';
+  import UserPageLayout from '#lib/components/layouts/UserPageLayout.svelte';
+  import MemoryCard from '#lib/components/memories/MemoryCard.svelte';
+  import EmptyPlaceholder from '#lib/components/shared-components/EmptyPlaceholder.svelte';
+  import SingleGridRow from '#lib/components/shared-components/SingleGridRow.svelte';
+  import Portal from '#lib/elements/Portal.svelte';
+  import { assetViewerManager } from '#lib/managers/asset-viewer-manager.svelte.ts';
+  import { authManager } from '#lib/managers/auth-manager.svelte.ts';
+  import { createPreloadedQuery } from '#lib/queries/client.ts';
+  import { getExploreDataQuery } from '#lib/queries/search.query.ts';
+  import { Route } from '#lib/route.ts';
+  import { getAssetMediaUrl, getPeopleThumbnailUrl, memoryLaneTitle } from '#lib/utils.ts';
+  import { getAltText } from '#lib/utils/thumbnail-util.ts';
+  import { toTimelineAsset } from '#lib/utils/timeline-util.ts';
+  import { AssetMediaSize, getAssetInfo } from '@immich/sdk';
+  import { ImageCarousel } from '@immich/ui';
   import { t } from 'svelte-i18n';
   import type { PageData } from './$types';
 
@@ -20,55 +26,78 @@
 
   let { data }: Props = $props();
 
-  const getFieldItems = (items: SearchExploreResponseDto[], field: string) => {
-    const targetField = items.find((item) => item.fieldName === field);
+  const query = createPreloadedQuery(getExploreDataQuery);
+  const explore = $derived(query.data);
+
+  const getFieldItems = (field: string) => {
+    const targetField = explore.find((item) => item.fieldName === field);
     return targetField?.items || [];
   };
 
-  let places = $derived(getFieldItems(data.items, 'exifInfo.city'));
-  let people = $state(data.response.people);
+  let places = $derived(getFieldItems('exifInfo.city'));
+  let recents = $derived(
+    getFieldItems('createdAt').sort((a, b) => new Date(b.value).getTime() - new Date(a.value).getTime()),
+  );
+  let people = $state(data.people.people);
+  let memories = $derived(
+    data.memories.map((memory) => ({
+      id: memory.id,
+      title: $memoryLaneTitle(memory),
+      href: Route.viewMemory({ id: memory.id, assetId: memory.assets[0].id }),
+      alt: $t('memory_lane_title', { values: { title: $getAltText(toTimelineAsset(memory.assets[0])) } }),
+      src: getAssetMediaUrl({ id: memory.assets[0].id }),
+      type: memory.type,
+    })),
+  );
 
-  let hasPeople = $derived(data.response.total > 0);
+  let hasPeople = $derived(data.people.total > 0);
 
-  onMount(() => {
-    return websocketEvents.on('on_person_thumbnail', (personId: string) => {
-      people.map((person) => {
-        if (person.id === personId) {
-          person.updatedAt = Date.now().toString();
-        }
-      });
-    });
+  const onPersonThumbnailReady = ({ id }: { id: string }) => {
+    for (const person of people) {
+      if (person.id === id) {
+        person.updatedAt = new Date().toISOString();
+      }
+    }
+  };
+
+  const onViewAsset = async (id: string) => {
+    const asset = await getAssetInfo({ ...authManager.params, id });
+    assetViewerManager.setAsset(asset);
+  };
+
+  const assetCursor = $derived({
+    current: assetViewerManager.asset!,
   });
 </script>
 
+<OnEvents {onPersonThumbnailReady} />
+
 <UserPageLayout title={data.meta.title}>
   {#if hasPeople}
-    <div class="mb-6 mt-2">
+    <div class="mt-2 mb-6">
       <div class="flex justify-between">
         <p class="mb-4 font-medium dark:text-immich-dark-fg">{$t('people')}</p>
         <a
-          href={AppRoute.PEOPLE}
+          href={Route.people()}
           class="pe-4 text-sm font-medium hover:text-immich-primary dark:text-immich-dark-fg dark:hover:text-immich-dark-primary"
           draggable="false">{$t('view_all')}</a
         >
       </div>
-      <SingleGridRow class="grid grid-flow-col md:grid-auto-fill-28 grid-auto-fill-20 gap-x-4">
+      <SingleGridRow class="grid grid-flow-col grid-auto-fill-20 gap-x-4 md:grid-auto-fill-28">
         {#snippet children({ itemCount })}
           {#each people.slice(0, itemCount) as person (person.id)}
-            <a href="{AppRoute.PEOPLE}/{person.id}" class="text-center relative">
-              <ImageThumbnail
-                circle
-                shadow
-                url={getPeopleThumbnailUrl(person)}
-                altText={person.name}
-                widthStyle="100%"
-              />
-              {#if person.isFavorite}
-                <div class="absolute top-2 start-2">
-                  <Icon icon={mdiHeart} size="24" class="text-white" />
-                </div>
-              {/if}
-              <p class="mt-2 text-ellipsis text-sm font-medium dark:text-white">{person.name}</p>
+            <a href={Route.viewPerson(person)} class="text-center">
+              <div class="@container relative">
+                <ImageThumbnail
+                  circle
+                  shadow
+                  url={getPeopleThumbnailUrl(person)}
+                  altText={person.name}
+                  widthStyle="100%"
+                />
+                <PersonIndicator {person} />
+              </div>
+              <p class="mt-2 text-sm font-medium text-ellipsis dark:text-white">{person.name}</p>
             </a>
           {/each}
         {/snippet}
@@ -77,32 +106,28 @@
   {/if}
 
   {#if places.length > 0}
-    <div class="mb-6 mt-2">
+    <div class="mt-2 mb-6">
       <div class="flex justify-between">
         <p class="mb-4 font-medium dark:text-immich-dark-fg">{$t('places')}</p>
         <a
-          href={AppRoute.PLACES}
+          href={Route.places()}
           class="pe-4 text-sm font-medium hover:text-immich-primary dark:text-immich-dark-fg dark:hover:text-immich-dark-primary"
           draggable="false">{$t('view_all')}</a
         >
       </div>
-      <SingleGridRow class="grid grid-flow-col md:grid-auto-fill-36 grid-auto-fill-28 gap-x-4">
+      <SingleGridRow class="grid grid-flow-col grid-auto-fill-28 gap-x-4 md:grid-auto-fill-36">
         {#snippet children({ itemCount })}
           {#each places.slice(0, itemCount) as item (item.data.id)}
-            <a
-              class="relative"
-              href="{AppRoute.SEARCH}?{getMetadataSearchQuery({ city: item.value })}"
-              draggable="false"
-            >
+            <a class="relative" href={Route.search({ city: item.value })} draggable="false">
               <div class="flex justify-center overflow-hidden rounded-xl brightness-75 filter">
                 <img
-                  src={getAssetThumbnailUrl({ id: item.data.id, size: AssetMediaSize.Thumbnail })}
+                  src={getAssetMediaUrl({ id: item.data.id, size: AssetMediaSize.Thumbnail })}
                   alt={item.value}
-                  class="object-cover aspect-square w-full"
+                  class="aspect-square w-full object-cover"
                 />
               </div>
               <span
-                class="absolute bottom-2 w-full text-ellipsis px-1 text-center text-sm font-medium capitalize text-white backdrop-blur-[1px] hover:cursor-pointer"
+                class="absolute bottom-2 w-full px-1 text-center text-sm font-medium text-ellipsis text-white capitalize backdrop-blur-[1px] hover:cursor-pointer"
               >
                 {item.value}
               </span>
@@ -113,7 +138,66 @@
     </div>
   {/if}
 
-  {#if !hasPeople && places.length === 0}
-    <EmptyPlaceholder text={$t('no_explore_results_message')} />
+  {#if memories.length > 0}
+    <div class="mt-2 mb-6">
+      <div class="flex justify-between">
+        <p class="mb-4 font-medium dark:text-immich-dark-fg">{$t('memories')}</p>
+        <a
+          href={Route.memories()}
+          class="pe-4 text-sm font-medium hover:text-immich-primary dark:text-immich-dark-fg dark:hover:text-immich-dark-primary"
+          draggable="false">{$t('view_all')}</a
+        >
+      </div>
+      <ImageCarousel items={memories}>
+        {#snippet child(item)}
+          <MemoryCard {item} />
+        {/snippet}
+      </ImageCarousel>
+    </div>
+  {/if}
+
+  {#if recents.length > 0}
+    <div class="mt-2 mb-6">
+      <div class="flex justify-between">
+        <p class="mb-4 font-medium dark:text-immich-dark-fg">{$t('recently_added')}</p>
+        <a
+          href={Route.recentlyAdded()}
+          class="pe-4 text-sm font-medium hover:text-immich-primary dark:text-immich-dark-fg dark:hover:text-immich-dark-primary"
+          draggable="false">{$t('view_all')}</a
+        >
+      </div>
+      <div class="flex h-24 max-w-fit flex-wrap gap-x-1 overflow-hidden md:h-42">
+        {#each recents as item (item.data.id)}
+          <button
+            type="button"
+            class="relative h-full flex-auto"
+            onclick={() => onViewAsset(item.data.id)}
+            draggable="false"
+          >
+            <img
+              src={getAssetMediaUrl({ id: item.data.id, size: AssetMediaSize.Thumbnail })}
+              alt={$getAltText(toTimelineAsset(item.data))}
+              class="size-full min-w-max rounded-xl object-cover"
+            />
+          </button>
+        {/each}
+      </div>
+    </div>
+  {/if}
+
+  {#if !hasPeople && places.length === 0 && recents.length === 0}
+    <EmptyPlaceholder text={$t('no_explore_results_message')} class="mx-auto mt-10" />
   {/if}
 </UserPageLayout>
+
+{#if assetViewerManager.isViewing}
+  {#await import('#lib/components/asset-viewer/AssetViewer.svelte') then { default: AssetViewer }}
+    <Portal target="body">
+      <AssetViewer
+        cursor={assetCursor}
+        showNavigation={false}
+        onClose={() => assetViewerManager.showAssetViewer(false)}
+      />
+    </Portal>
+  {/await}
+{/if}

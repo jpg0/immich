@@ -1,19 +1,20 @@
 import 'dart:async';
-import 'dart:io';
 
 import 'package:hooks_riverpod/hooks_riverpod.dart';
+import 'package:immich_mobile/domain/models/settings_key.dart';
 import 'package:immich_mobile/domain/models/store.model.dart';
 import 'package:immich_mobile/domain/utils/background_sync.dart';
 import 'package:immich_mobile/entities/store.entity.dart';
+import 'package:immich_mobile/infrastructure/repositories/network.repository.dart';
+import 'package:immich_mobile/infrastructure/repositories/settings.repository.dart';
 import 'package:immich_mobile/models/auth/auxilary_endpoint.model.dart';
 import 'package:immich_mobile/models/auth/login_response.model.dart';
 import 'package:immich_mobile/providers/api.provider.dart';
-import 'package:immich_mobile/providers/app_settings.provider.dart';
 import 'package:immich_mobile/providers/background_sync.provider.dart';
+import 'package:immich_mobile/providers/infrastructure/platform.provider.dart';
 import 'package:immich_mobile/repositories/auth.repository.dart';
 import 'package:immich_mobile/repositories/auth_api.repository.dart';
 import 'package:immich_mobile/services/api.service.dart';
-import 'package:immich_mobile/services/app_settings.service.dart';
 import 'package:immich_mobile/services/network.service.dart';
 import 'package:logging/logging.dart';
 import 'package:openapi/api.dart';
@@ -25,7 +26,6 @@ final authServiceProvider = Provider(
     ref.watch(apiServiceProvider),
     ref.watch(networkServiceProvider),
     ref.watch(backgroundSyncProvider),
-    ref.watch(appSettingsServiceProvider),
   ),
 );
 
@@ -35,7 +35,6 @@ class AuthService {
   final ApiService _apiService;
   final NetworkService _networkService;
   final BackgroundSyncManager _backgroundSyncManager;
-  final AppSettingsService _appSettingsService;
   final _log = Logger("AuthService");
 
   AuthService(
@@ -44,7 +43,6 @@ class AuthService {
     this._apiService,
     this._networkService,
     this._backgroundSyncManager,
-    this._appSettingsService,
   );
 
   /// Validates the provided server URL by resolving and setting the endpoint.
@@ -64,27 +62,19 @@ class AuthService {
   }
 
   Future<bool> validateAuxilaryServerUrl(String url) async {
-    final httpclient = HttpClient();
     bool isValid = false;
 
     try {
+      final urls = ApiService.getServerUrls();
+      urls.add(url);
+      await NetworkRepository.setHeaders(ApiService.getRequestHeaders(), urls);
       final uri = Uri.parse('$url/users/me');
-      final request = await httpclient.getUrl(uri);
-
-      // add auth token + any configured custom headers
-      final customHeaders = ApiService.getRequestHeaders();
-      customHeaders.forEach((key, value) {
-        request.headers.add(key, value);
-      });
-
-      final response = await request.close();
+      final response = await NetworkRepository.client.get(uri);
       if (response.statusCode == 200) {
         isValid = true;
       }
     } catch (error) {
       _log.severe("Error validating auxiliary endpoint", error);
-    } finally {
-      httpclient.close();
     }
 
     return isValid;
@@ -111,7 +101,7 @@ class AuthService {
         _log.severe("Error clearing local data", error, stackTrace);
       });
 
-      await _appSettingsService.setSetting(AppSettingsEnum.enableBackup, false);
+      await SettingsRepository.instance.write(SettingsKey.backupEnabled, false);
     }
   }
 
@@ -121,7 +111,7 @@ class AuthService {
   /// - Authentication repository data
   /// - Current user information
   /// - Access token
-  /// - Asset ETag
+  /// - Server-specific endpoint configuration
   ///
   /// All deletions are executed in parallel using [Future.wait].
   Future<void> clearLocalData() async {
@@ -131,17 +121,19 @@ class AuthService {
       _authRepository.clearLocalData(),
       Store.delete(StoreKey.currentUser),
       Store.delete(StoreKey.accessToken),
-      Store.delete(StoreKey.assetETag),
-      Store.delete(StoreKey.autoEndpointSwitching),
-      Store.delete(StoreKey.preferredWifiName),
-      Store.delete(StoreKey.localEndpoint),
-      Store.delete(StoreKey.externalEndpointList),
+      networkApi.clearCookies(),
+      SettingsRepository.instance.clear(const [
+        .networkAutoEndpointSwitching,
+        .networkPreferredWifiName,
+        .networkLocalEndpoint,
+        .networkExternalEndpointList,
+      ]),
     ]);
   }
 
-  Future<void> changePassword(String newPassword) {
+  Future<void> changePassword({required String currentPassword, required String newPassword}) async {
     try {
-      return _authApiRepository.changePassword(newPassword);
+      await _authApiRepository.changePassword(currentPassword: currentPassword, newPassword: newPassword);
     } catch (error, stackTrace) {
       _log.severe("Error changing password", error, stackTrace);
       rethrow;
@@ -172,6 +164,7 @@ class AuthService {
       final localEndpoint = _authRepository.getLocalEndpoint();
       if (localEndpoint != null) {
         await _apiService.resolveAndSetEndpoint(localEndpoint);
+        _log.info("Using local endpoint");
         return localEndpoint;
       }
     } catch (error, stackTrace) {
@@ -191,9 +184,11 @@ class AuthService {
       return null;
     }
 
-    for (final endpoint in endpointList) {
+    for (var i = 0; i < endpointList.length; i++) {
       try {
-        return await _apiService.resolveAndSetEndpoint(endpoint.url);
+        final url = await _apiService.resolveAndSetEndpoint(endpointList[i].url);
+        _log.info("Using external endpoint ${i + 1}");
+        return url;
       } on ApiException catch (error) {
         _log.severe("Cannot resolve endpoint", error);
         continue;

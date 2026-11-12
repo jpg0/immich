@@ -1,11 +1,13 @@
-import { eventManager } from '$lib/managers/event-manager.svelte';
+import { eventManager } from '#lib/managers/event-manager.svelte.ts';
 
 class SearchStore {
   savedSearchTerms = $state<string[]>([]);
   isSearchEnabled = $state(false);
 
   constructor() {
-    eventManager.on('auth.logout', () => this.clearCache());
+    eventManager.on({
+      AuthLogout: () => this.clearCache(),
+    });
   }
 
   clearCache() {

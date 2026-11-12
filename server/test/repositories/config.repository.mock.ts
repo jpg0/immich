@@ -1,11 +1,12 @@
-import { DatabaseExtension, ImmichEnvironment, ImmichWorker } from 'src/enum';
-import { ConfigRepository, EnvData } from 'src/repositories/config.repository';
-import { RepositoryInterface } from 'src/types';
 import { Mocked, vitest } from 'vitest';
+import { DatabaseExtension, ImmichEnvironment, ImmichWorker, LogFormat } from 'src/enum.js';
+import { ConfigRepository, EnvData } from 'src/repositories/config.repository.js';
+import type { RepositoryInterface } from 'src/types.js';
 
-const envData: EnvData = {
+export const envData: EnvData = {
   port: 2283,
   environment: ImmichEnvironment.Production,
+  logFormat: LogFormat.Console,
 
   buildMetadata: {},
   bull: {
@@ -29,14 +30,21 @@ const envData: EnvData = {
       username: 'postgres',
       password: 'postgres',
     },
-
     skipMigrations: false,
-    vectorExtension: DatabaseExtension.Vectors,
+    vectorExtension: DatabaseExtension.VectorChord,
+  },
+
+  helmet: {
+    config: {},
   },
 
   licensePublicKey: {
     client: 'client-public-key',
     server: 'server-public-key',
+  },
+
+  versionCheck: {
+    url: 'https://version.immich.cloud/version',
   },
 
   network: {
@@ -46,10 +54,6 @@ const envData: EnvData = {
   otel: {
     metrics: {
       hostMetrics: false,
-      apiMetrics: {
-        enable: false,
-        ignoreRoutes: [],
-      },
     },
   },
 
@@ -66,12 +70,18 @@ const envData: EnvData = {
       admin1: '/build/geodata/admin1CodesASCII.txt',
       admin2: '/build/geodata/admin2Codes.txt',
       cities500: '/build/geodata/cities500.txt',
+      countryInfo: '/build/geodata/countryInfo.txt',
       naturalEarthCountriesPath: 'build/ne_10m_admin_0_countries.geojson',
     },
     web: {
       root: '/build/www',
       indexHtml: '/build/www/index.html',
     },
+    corePlugin: '/build/plugins/immich-plugin-core',
+  },
+
+  setup: {
+    allow: true,
   },
 
   storage: {
@@ -86,6 +96,13 @@ const envData: EnvData = {
 
   workers: [ImmichWorker.Api, ImmichWorker.Microservices],
 
+  plugins: {
+    external: {
+      allow: true,
+      installFolder: '/app/data/plugins',
+    },
+  },
+
   noColor: false,
 };
 
@@ -95,5 +112,6 @@ export const newConfigRepositoryMock = (): Mocked<RepositoryInterface<ConfigRepo
     getEnv: vitest.fn().mockReturnValue(mockEnvData({})),
     getWorker: vitest.fn().mockReturnValue(ImmichWorker.Api),
     isDev: vitest.fn().mockReturnValue(false),
+    isProduction: vitest.fn().mockReturnValue(true),
   };
 };

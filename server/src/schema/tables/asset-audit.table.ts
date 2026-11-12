@@ -1,5 +1,5 @@
-import { PrimaryGeneratedUuidV7Column } from 'src/decorators';
-import { Column, CreateDateColumn, Generated, Table, Timestamp } from 'src/sql-tools';
+import { Column, CreateDateColumn, Table, Timestamp, type Generated } from '@immich/sql-tools';
+import { PrimaryGeneratedUuidV7Column } from 'src/decorators.js';
 
 @Table('asset_audit')
 export class AssetAuditTable {

@@ -1,14 +1,13 @@
 import 'dart:async';
 
-import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:immich_mobile/entities/store.entity.dart';
 import 'package:immich_mobile/extensions/build_context_extensions.dart';
 import 'package:immich_mobile/extensions/theme_extensions.dart';
+import 'package:immich_mobile/generated/translations.g.dart';
 import 'package:immich_mobile/providers/auth.provider.dart';
-import 'package:immich_mobile/providers/backup/backup.provider.dart';
+import 'package:immich_mobile/providers/backup/backup_server.provider.dart';
 import 'package:immich_mobile/providers/infrastructure/readonly_mode.provider.dart';
 import 'package:immich_mobile/providers/upload_profile_image.provider.dart';
 import 'package:immich_mobile/providers/user.provider.dart';
@@ -25,7 +24,7 @@ class AppBarProfileInfoBox extends HookConsumerWidget {
     final isReadonlyModeEnabled = ref.watch(readonlyModeProvider);
     final user = ref.watch(currentUserProvider);
 
-    buildUserProfileImage() {
+    Widget buildUserProfileImage() {
       if (user == null) {
         return const CircleAvatar(
           radius: 20,
@@ -34,7 +33,7 @@ class AppBarProfileInfoBox extends HookConsumerWidget {
         );
       }
 
-      final userImage = UserCircleAvatar(radius: 22, size: 44, user: user);
+      final userImage = UserCircleAvatar(size: 44, user: user, hasBorder: true);
 
       if (uploadProfileImageStatus == UploadProfileStatus.loading) {
         return const SizedBox(height: 40, width: 40, child: ImmichLoadingIndicator(borderRadius: 20));
@@ -43,86 +42,72 @@ class AppBarProfileInfoBox extends HookConsumerWidget {
       return userImage;
     }
 
-    pickUserProfileImage() async {
+    Future<void> pickUserProfileImage() async {
       final XFile? image = await ImagePicker().pickImage(source: ImageSource.gallery, maxHeight: 1024, maxWidth: 1024);
 
-      if (image != null) {
-        var success = await ref.watch(uploadProfileImageProvider.notifier).upload(image);
+      if (image != null && context.mounted) {
+        final success = await ref.read(uploadProfileImageProvider.notifier).upload(image);
 
-        if (success) {
+        if (success && context.mounted) {
           final profileImagePath = ref.read(uploadProfileImageProvider).profileImagePath;
-          ref.watch(authProvider.notifier).updateUserProfileImagePath(profileImagePath);
+          ref.read(authProvider.notifier).updateUserProfileImagePath(profileImagePath);
           if (user != null) {
-            ref.read(currentUserProvider.notifier).refresh();
+            unawaited(ref.read(currentUserProvider.notifier).refresh());
           }
 
-          unawaited(ref.read(backupProvider.notifier).updateDiskInfo());
+          unawaited(ref.read(backupServerProvider.notifier).updateDiskInfo());
         }
       }
     }
 
     void toggleReadonlyMode() {
-      // read only mode is only supported int he beta experience
-      // TODO: remove this check when the beta UI goes stable
-      if (!Store.isBetaTimelineEnabled) return;
-
-      final isReadonlyModeEnabled = ref.watch(readonlyModeProvider);
+      final isReadonlyModeEnabled = ref.read(readonlyModeProvider);
       ref.read(readonlyModeProvider.notifier).toggleReadonlyMode();
 
       context.scaffoldMessenger.showSnackBar(
         SnackBar(
           duration: const Duration(seconds: 2),
           content: Text(
-            (isReadonlyModeEnabled ? "readonly_mode_disabled" : "readonly_mode_enabled").tr(),
+            isReadonlyModeEnabled ? context.t.readonly_mode_disabled : context.t.readonly_mode_enabled,
             style: context.textTheme.bodyLarge?.copyWith(color: context.primaryColor),
           ),
         ),
       );
     }
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 10.0),
-      child: Container(
-        width: double.infinity,
-        decoration: BoxDecoration(
-          color: context.colorScheme.surface,
-          borderRadius: const BorderRadius.only(topLeft: Radius.circular(10), topRight: Radius.circular(10)),
-        ),
-        child: ListTile(
-          minLeadingWidth: 50,
-          leading: GestureDetector(
-            onTap: pickUserProfileImage,
-            onLongPress: toggleReadonlyMode,
-            child: Stack(
-              clipBehavior: Clip.none,
-              children: [
-                AbsorbPointer(child: buildUserProfileImage()),
-                if (!isReadonlyModeEnabled)
-                  Positioned(
-                    bottom: -5,
-                    right: -8,
-                    child: Material(
-                      color: context.colorScheme.surfaceContainerHighest,
-                      elevation: 3,
-                      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.all(Radius.circular(50.0))),
-                      child: Padding(
-                        padding: const EdgeInsets.all(5.0),
-                        child: Icon(Icons.camera_alt_outlined, color: context.primaryColor, size: 14),
-                      ),
-                    ),
+    return ListTile(
+      minLeadingWidth: 50,
+      leading: GestureDetector(
+        onTap: pickUserProfileImage,
+        onLongPress: toggleReadonlyMode,
+        child: Stack(
+          clipBehavior: Clip.none,
+          children: [
+            AbsorbPointer(child: buildUserProfileImage()),
+            if (!isReadonlyModeEnabled)
+              Positioned(
+                bottom: -5,
+                right: -8,
+                child: Material(
+                  color: context.colorScheme.surfaceContainerHighest,
+                  elevation: 3,
+                  shape: const RoundedRectangleBorder(borderRadius: BorderRadius.all(Radius.circular(50.0))),
+                  child: Padding(
+                    padding: const EdgeInsets.all(5.0),
+                    child: Icon(Icons.camera_alt_outlined, color: context.primaryColor, size: 14),
                   ),
-              ],
-            ),
-          ),
-          title: Text(
-            authState.name,
-            style: context.textTheme.titleMedium?.copyWith(color: context.primaryColor, fontWeight: FontWeight.w500),
-          ),
-          subtitle: Text(
-            authState.userEmail,
-            style: context.textTheme.bodySmall?.copyWith(color: context.colorScheme.onSurfaceSecondary),
-          ),
+                ),
+              ),
+          ],
         ),
+      ),
+      title: Text(
+        authState.name,
+        style: context.textTheme.titleMedium?.copyWith(color: context.primaryColor, fontWeight: FontWeight.w500),
+      ),
+      subtitle: Text(
+        authState.userEmail,
+        style: context.textTheme.bodySmall?.copyWith(color: context.colorScheme.onSurfaceSecondary),
       ),
     );
   }

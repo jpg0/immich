@@ -1,13 +1,17 @@
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import swc from 'unplugin-swc';
-import tsconfigPaths from 'vite-tsconfig-paths';
 import { defineConfig } from 'vitest/config';
 
-// Set the timezone to UTC to avoid timezone issues during testing
-process.env.TZ = 'UTC';
+const serverRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
 export default defineConfig({
+  resolve: {
+    tsconfigPaths: true,
+  },
   test: {
-    root: './',
+    name: 'server:unit',
+    root: serverRoot,
     globals: true,
     include: ['src/**/*.spec.ts'],
     coverage: {
@@ -20,11 +24,9 @@ export default defineConfig({
         'src/services/index.ts',
       ],
     },
-    server: {
-      deps: {
-        fallbackCJS: true,
-      },
+    env: {
+      TZ: 'UTC',
     },
   },
-  plugins: [swc.vite(), tsconfigPaths()],
+  plugins: [swc.vite()],
 });

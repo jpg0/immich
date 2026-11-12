@@ -1,14 +1,19 @@
 <script lang="ts">
-  import FormatMessage from '$lib/elements/FormatMessage.svelte';
-  import { serverConfig } from '$lib/stores/server-config.store';
-  import { handleError } from '$lib/utils/handle-error';
-  import { deleteUserAdmin, type UserAdminResponseDto, type UserResponseDto } from '@immich/sdk';
+  import FormatMessage from '#lib/elements/FormatMessage.svelte';
+  import { createPreloadedQuery, executeMutation } from '#lib/queries/client.ts';
+  import { getUserConfigQuery } from '#lib/queries/config-user.query.ts';
+  import { deleteUserAdminMutation } from '#lib/queries/user-admin.query.ts';
+  import { type UserAdminResponseDto } from '@immich/sdk';
   import { Alert, Checkbox, ConfirmModal, Field, Input, Label, Text } from '@immich/ui';
+  import { mdiTrashCanOutline } from '@mdi/js';
   import { t } from 'svelte-i18n';
 
+  const query = createPreloadedQuery(getUserConfigQuery);
+  const config = $derived(query.data);
+
   type Props = {
-    user: UserResponseDto;
-    onClose: (user?: UserAdminResponseDto) => void;
+    user: UserAdminResponseDto;
+    onClose: () => void;
   };
 
   let { user, onClose }: Props = $props();
@@ -17,28 +22,26 @@
   let email = $state('');
   let disabled = $derived(force && email !== user.email);
 
-  const handleClose = async (confirmed: boolean) => {
+  const handleClose = async (confirmed?: boolean) => {
     if (!confirmed) {
       onClose();
       return;
     }
 
-    try {
-      const result = await deleteUserAdmin({ id: user.id, userAdminDeleteDto: { force } });
-      onClose(result);
-    } catch (error) {
-      handleError(error, $t('errors.unable_to_delete_user'));
-    }
+    await executeMutation(deleteUserAdminMutation, [{ id: user.id, userAdminDeleteDto: { force } }], {
+      onSuccess: onClose,
+    });
   };
 </script>
 
 <ConfirmModal
+  icon={mdiTrashCanOutline}
   title={$t('delete_user')}
   confirmText={force ? $t('permanently_delete') : $t('delete')}
   onClose={handleClose}
   {disabled}
 >
-  {#snippet promptSnippet()}
+  {#snippet prompt()}
     <div class="flex flex-col gap-4">
       <Text>
         {#if force}
@@ -48,10 +51,7 @@
             {/snippet}
           </FormatMessage>
         {:else}
-          <FormatMessage
-            key="admin.user_delete_delay"
-            values={{ user: user.name, delay: $serverConfig.userDeleteDelay }}
-          >
+          <FormatMessage key="admin.user_delete_delay" values={{ user: user.name, delay: config.user.deleteDelay }}>
             {#snippet children({ message })}
               <b>{message}</b>
             {/snippet}

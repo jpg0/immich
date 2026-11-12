@@ -1,6 +1,6 @@
-import { AppRoute } from '$lib/constants';
-import { authenticate } from '$lib/utils/auth';
-import { getFormatter } from '$lib/utils/i18n';
+import { Route } from '#lib/route.ts';
+import { authenticate } from '#lib/utils/auth.ts';
+import { getFormatter } from '#lib/utils/i18n.ts';
 import { getAuthStatus } from '@immich/sdk';
 import type { PageLoad } from './$types';
 
@@ -16,6 +16,6 @@ export const load = (async ({ url }) => {
       title: $t('pin_verification'),
     },
     hasPinCode: !!pinCode,
-    continueUrl: url.searchParams.get('continue') || AppRoute.LOCKED,
+    continueUrl: Route.continue(url.searchParams.get('continue'), Route.locked()),
   };
 }) satisfies PageLoad;

@@ -1,14 +1,19 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
-import { parse } from 'node:path';
-import { StorageCore } from 'src/cores/storage.core';
-import { AssetIdsDto } from 'src/dtos/asset.dto';
-import { AuthDto } from 'src/dtos/auth.dto';
-import { DownloadArchiveInfo, DownloadInfoDto, DownloadResponseDto } from 'src/dtos/download.dto';
-import { Permission } from 'src/enum';
-import { ImmichReadStream } from 'src/repositories/storage.repository';
-import { BaseService } from 'src/services/base.service';
-import { HumanReadableSize } from 'src/utils/bytes';
-import { getPreferences } from 'src/utils/preferences';
+import sanitize from 'sanitize-filename';
+import { StorageCore } from 'src/cores/storage.core.js';
+import { AuthDto, isEditedOnly } from 'src/dtos/auth.dto.js';
+import {
+  DownloadArchiveDto,
+  DownloadArchiveInfo,
+  DownloadInfoDto,
+  DownloadResponseDto,
+} from 'src/dtos/download.dto.js';
+import { Permission } from 'src/enum.js';
+import { ImmichReadStream } from 'src/repositories/storage.repository.js';
+import { BaseService } from 'src/services/base.service.js';
+import { HumanReadableSize } from 'src/utils/bytes.js';
+import { getFileNameWithoutExtension, getFilenameExtension } from 'src/utils/file.js';
+import { getPreferences } from 'src/utils/preferences.js';
 
 @Injectable()
 export class DownloadService extends BaseService {
@@ -40,12 +45,14 @@ export class DownloadService extends BaseService {
 
     const addToArchive = ({ id, size }: { id: string; size: number | null }) => {
       archive.assetIds.push(id);
-      archive.size += Number(size || 0);
+      archive.size += size || 0;
 
-      if (archive.size > targetSize) {
-        archives.push(archive);
-        archive = { size: 0, assetIds: [] };
+      if (archive.size <= targetSize) {
+        return;
       }
+
+      archives.push(archive);
+      archive = { size: 0, assetIds: [] };
     };
 
     for await (const asset of assets) {
@@ -80,11 +87,12 @@ export class DownloadService extends BaseService {
     return { totalSize, archives };
   }
 
-  async downloadArchive(auth: AuthDto, dto: AssetIdsDto): Promise<ImmichReadStream> {
+  async downloadArchive(auth: AuthDto, dto: DownloadArchiveDto): Promise<ImmichReadStream> {
     await this.requireAccess({ auth, permission: Permission.AssetDownload, ids: dto.assetIds });
 
+    const edited = isEditedOnly(auth, dto.edited);
     const zip = this.storageRepository.createZipStream();
-    const assets = await this.assetRepository.getByIds(dto.assetIds);
+    const assets = await this.assetRepository.getForOriginals(dto.assetIds, edited);
     const assetMap = new Map(assets.map((asset) => [asset.id, asset]));
     const paths: Record<string, number> = {};
 
@@ -94,21 +102,24 @@ export class DownloadService extends BaseService {
         continue;
       }
 
-      const { originalPath, originalFileName } = asset;
+      const { originalPath, editedPath, originalFileName } = asset;
 
-      let filename = originalFileName;
+      const name = getFileNameWithoutExtension(sanitize(originalFileName) || 'unnamed');
+      const extension = getFilenameExtension(editedPath || originalPath);
+      let filename = name + extension;
+
       const count = paths[filename] || 0;
       paths[filename] = count + 1;
       if (count !== 0) {
-        const parsedFilename = parse(originalFileName);
-        filename = `${parsedFilename.name}+${count}${parsedFilename.ext}`;
+        filename = `${name}+${count}${extension}`;
       }
 
-      let realpath = originalPath;
+      let realpath = editedPath || originalPath;
+
       try {
-        realpath = await this.storageRepository.realpath(originalPath);
+        realpath = await this.storageRepository.realpath(realpath);
       } catch {
-        this.logger.warn('Unable to resolve realpath', { originalPath });
+        this.logger.warn('Unable to resolve realpath', { realpath });
       }
 
       zip.addFile(realpath, filename);
@@ -116,6 +127,9 @@ export class DownloadService extends BaseService {
 
     void zip.finalize();
 
-    return { stream: zip.stream };
+    return {
+      stream: zip.stream,
+      disposition: dto.archiveName && `attachment; filename*=UTF-8''${encodeURIComponent(dto.archiveName)}.zip`,
+    };
   }
 }

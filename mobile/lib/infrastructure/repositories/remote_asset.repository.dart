@@ -1,33 +1,23 @@
 import 'package:drift/drift.dart';
+import 'package:immich_mobile/data/db/main/database.dart';
+import 'package:immich_mobile/data/db/main/table/asset/edit.dart';
+import 'package:immich_mobile/data/db/main/table/remote/asset.dart';
+import 'package:immich_mobile/data/db/main/table/remote/asset.drift.dart';
+import 'package:immich_mobile/data/db/main/table/remote/exif.dart';
+import 'package:immich_mobile/data/db/main/table/remote/exif.drift.dart';
+import 'package:immich_mobile/data/db/main/table/remote/stack.drift.dart';
 import 'package:immich_mobile/domain/models/asset/base_asset.model.dart';
+import 'package:immich_mobile/domain/models/asset_edit.model.dart';
 import 'package:immich_mobile/domain/models/exif.model.dart';
 import 'package:immich_mobile/domain/models/stack.model.dart';
-import 'package:immich_mobile/infrastructure/entities/exif.entity.dart' hide ExifInfo;
-import 'package:immich_mobile/infrastructure/entities/exif.entity.drift.dart';
-import 'package:immich_mobile/infrastructure/entities/remote_asset.entity.dart';
-import 'package:immich_mobile/infrastructure/entities/remote_asset.entity.drift.dart';
-import 'package:immich_mobile/infrastructure/entities/stack.entity.drift.dart';
-import 'package:immich_mobile/infrastructure/repositories/db.repository.dart';
-import 'package:maplibre_gl/maplibre_gl.dart';
+import 'package:immich_mobile/infrastructure/repositories/remote_asset.repository.drift.dart';
+import 'package:immich_mobile/utils/option.dart';
 
-class RemoteAssetRepository extends DriftDatabaseRepository {
-  final Drift _db;
-  const RemoteAssetRepository(this._db) : super(_db);
+@DriftAccessor()
+class RemoteAssetRepository extends DatabaseAccessor<Drift> with $RemoteAssetRepositoryMixin {
+  RemoteAssetRepository(super.attachedDatabase);
 
-  /// For testing purposes
-  Future<List<RemoteAsset>> getSome(String userId) {
-    final query = _db.remoteAssetEntity.select()
-      ..where(
-        (row) =>
-            _db.remoteAssetEntity.ownerId.equals(userId) &
-            _db.remoteAssetEntity.deletedAt.isNull() &
-            _db.remoteAssetEntity.visibility.equalsValue(AssetVisibility.timeline),
-      )
-      ..orderBy([(row) => OrderingTerm.desc(row.createdAt)])
-      ..limit(10);
-
-    return query.map((row) => row.toDto()).get();
-  }
+  Drift get _db => attachedDatabase;
 
   SingleOrNullSelectable<RemoteAsset?> _assetSelectable(String id) {
     final query =
@@ -51,14 +41,31 @@ class RemoteAssetRepository extends DriftDatabaseRepository {
     return _assetSelectable(id).watchSingleOrNull();
   }
 
+  Stream<Set<String>> watchDeletedAssetIds(Iterable<String> ids, AssetVisibility visibility) {
+    final idList = ids.toList(growable: false);
+    if (idList.isEmpty) {
+      return Stream.value(const <String>{});
+    }
+
+    final query = _db.remoteAssetEntity.selectOnly()
+      ..addColumns([_db.remoteAssetEntity.id])
+      ..where(
+        _db.remoteAssetEntity.id.isIn(idList) &
+            (_db.remoteAssetEntity.deletedAt.isNotNull() |
+                _db.remoteAssetEntity.visibility.equalsValue(visibility).not()),
+      );
+
+    return query.map((row) => row.read(_db.remoteAssetEntity.id)!).watch().map((rows) => rows.toSet());
+  }
+
   Future<RemoteAsset?> get(String id) {
     return _assetSelectable(id).getSingleOrNull();
   }
 
-  Future<RemoteAsset?> getByChecksum(String checksum) {
+  Future<List<RemoteAsset>> getAllDebugForChecksum(String checksum) {
     final query = _db.remoteAssetEntity.select()..where((row) => row.checksum.equals(checksum));
 
-    return query.map((row) => row.toDto()).getSingleOrNull();
+    return query.map((row) => row.toDto()).get();
   }
 
   Future<List<RemoteAsset>> getStackChildren(RemoteAsset asset) {
@@ -69,17 +76,15 @@ class RemoteAssetRepository extends DriftDatabaseRepository {
 
     final query = _db.remoteAssetEntity.select()
       ..where((row) => row.stackId.equals(stackId) & row.id.equals(asset.id).not())
-      ..orderBy([(row) => OrderingTerm.desc(row.createdAt)]);
+      ..orderBy([(row) => OrderingTerm.asc(row.createdAt)]);
 
     return query.map((row) => row.toDto()).get();
   }
 
-  Future<ExifInfo?> getExif(String id) {
-    return _db.managers.remoteExifEntity
-        .filter((row) => row.assetId.id.equals(id))
-        .map((row) => row.toDto())
-        .getSingleOrNull();
-  }
+  Stream<ExifInfo?> watchExif(String id) => _db.managers.remoteExifEntity
+      .filter((row) => row.assetId.id.equals(id))
+      .map((row) => row.toDto())
+      .watchSingleOrNull();
 
   Future<List<(String, String)>> getPlaces(String userId) {
     final asset = Subquery(
@@ -113,30 +118,6 @@ class RemoteAssetRepository extends DriftDatabaseRepository {
     }).get();
   }
 
-  Future<void> updateFavorite(List<String> ids, bool isFavorite) {
-    return _db.batch((batch) async {
-      for (final id in ids) {
-        batch.update(
-          _db.remoteAssetEntity,
-          RemoteAssetEntityCompanion(isFavorite: Value(isFavorite)),
-          where: (e) => e.id.equals(id),
-        );
-      }
-    });
-  }
-
-  Future<void> updateVisibility(List<String> ids, AssetVisibility visibility) {
-    return _db.batch((batch) async {
-      for (final id in ids) {
-        batch.update(
-          _db.remoteAssetEntity,
-          RemoteAssetEntityCompanion(visibility: Value(visibility)),
-          where: (e) => e.id.equals(id),
-        );
-      }
-    });
-  }
-
   Future<void> trash(List<String> ids) {
     return _db.batch((batch) async {
       for (final id in ids) {
@@ -161,39 +142,20 @@ class RemoteAssetRepository extends DriftDatabaseRepository {
     });
   }
 
-  Future<void> delete(List<String> ids) {
+  Future<void> emptyTrash(String ownerId) async {
+    await _db.remoteAssetEntity.deleteWhere((t) => t.deletedAt.isNotNull() & t.ownerId.equals(ownerId));
+  }
+
+  Future<void> restoreAllTrash(String ownerId) async {
+    await (_db.remoteAssetEntity.update()..where((t) => t.deletedAt.isNotNull() & t.ownerId.equals(ownerId))).write(
+      const RemoteAssetEntityCompanion(deletedAt: Value(null)),
+    );
+  }
+
+  Future<void> deleteAssets(List<String> ids) {
     return _db.batch((batch) {
       for (final id in ids) {
         batch.deleteWhere(_db.remoteAssetEntity, (row) => row.id.equals(id));
-      }
-    });
-  }
-
-  Future<void> updateLocation(List<String> ids, LatLng location) {
-    return _db.batch((batch) async {
-      for (final id in ids) {
-        batch.update(
-          _db.remoteExifEntity,
-          RemoteExifEntityCompanion(latitude: Value(location.latitude), longitude: Value(location.longitude)),
-          where: (e) => e.assetId.equals(id),
-        );
-      }
-    });
-  }
-
-  Future<void> updateDateTime(List<String> ids, DateTime dateTime) {
-    return _db.batch((batch) async {
-      for (final id in ids) {
-        batch.update(
-          _db.remoteExifEntity,
-          RemoteExifEntityCompanion(dateTimeOriginal: Value(dateTime)),
-          where: (e) => e.assetId.equals(id),
-        );
-        batch.update(
-          _db.remoteAssetEntity,
-          RemoteAssetEntityCompanion(createdAt: Value(dateTime)),
-          where: (e) => e.id.equals(id),
-        );
       }
     });
   }
@@ -254,7 +216,50 @@ class RemoteAssetRepository extends DriftDatabaseRepository {
     );
   }
 
+  Future<void> updateRating(String assetId, int? rating) async {
+    await (_db.remoteExifEntity.update()..where((row) => row.assetId.equals(assetId))).write(
+      RemoteExifEntityCompanion(rating: Value(rating)),
+    );
+  }
+
   Future<int> getCount() {
     return _db.managers.remoteAssetEntity.count();
+  }
+
+  Future<List<AssetEdit>> getAssetEdits(String assetId) {
+    final query = _db.assetEditEntity.select()
+      ..where((row) => row.assetId.equals(assetId) & row.action.equals(AssetEditAction.other.index).not())
+      ..orderBy([(row) => OrderingTerm.asc(row.sequence)]);
+    return query.map((row) => row.toDto()!).get();
+  }
+
+  Future<void> updateAssets(
+    List<String> remoteIds, {
+    Option<bool> isFavorite = const .none(),
+    Option<AssetVisibility> visibility = const .none(),
+    Option<DateTime> createdAt = const .none(),
+  }) async {
+    if ([isFavorite, visibility, createdAt].every((option) => option.isNone)) {
+      return;
+    }
+
+    final companion = RemoteAssetEntityCompanion(
+      visibility: visibility.toDriftValue(),
+      isFavorite: isFavorite.toDriftValue(),
+      createdAt: createdAt.toDriftValue(),
+    );
+    final columns = companion.toColumns(true);
+    if (createdAt case Some(:final value)) {
+      columns['group_date'] = coalesce([
+        _db.remoteAssetEntity.localDateTime.strftime('%Y-%m-%d'),
+        Variable(value).modify(const DateTimeModifier.localTime()).date,
+      ]);
+    }
+    final row = RawValuesInsertable<RemoteAssetEntityData>(columns);
+    return _db.batch((batch) {
+      for (final remoteId in remoteIds) {
+        batch.update(_db.remoteAssetEntity, row, where: (e) => e.id.equals(remoteId));
+      }
+    });
   }
 }

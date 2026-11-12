@@ -11,6 +11,7 @@ class BaseActionButton extends StatelessWidget {
     this.onLongPressed,
     this.maxWidth = 90.0,
     this.minWidth,
+    this.iconOnly = false,
     this.menuItem = false,
   });
 
@@ -19,6 +20,11 @@ class BaseActionButton extends StatelessWidget {
   final Color? iconColor;
   final double maxWidth;
   final double? minWidth;
+
+  /// When true, renders only an IconButton without text label
+  final bool iconOnly;
+
+  /// When true, renders as a MenuItemButton for use in MenuAnchor menus
   final bool menuItem;
   final void Function()? onPressed;
   final void Function()? onLongPressed;
@@ -28,15 +34,40 @@ class BaseActionButton extends StatelessWidget {
     final miniWidth = minWidth ?? (context.isMobile ? context.width / 4.5 : 75.0);
     final iconTheme = IconTheme.of(context);
     final iconSize = iconTheme.size ?? 24.0;
-    final iconColor = this.iconColor ?? iconTheme.color ?? context.themeData.iconTheme.color;
     final textColor = context.themeData.textTheme.labelLarge?.color;
 
-    if (menuItem) {
+    if (iconOnly) {
+      final iconColor = this.iconColor ?? iconTheme.color ?? context.themeData.iconTheme.color;
+
       return IconButton(
         onPressed: onPressed,
+        onLongPress: onLongPressed,
         icon: Icon(iconData, size: iconSize, color: iconColor),
       );
     }
+
+    if (menuItem) {
+      final iconColor = this.iconColor;
+      final onPressed = this.onPressed;
+
+      return MenuItemButton(
+        closeOnActivate: false,
+        style: MenuItemButton.styleFrom(
+          alignment: Alignment.centerLeft,
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        ),
+        leadingIcon: Icon(iconData, color: iconColor, size: 20),
+        onPressed: onPressed == null
+            ? null
+            : () {
+                onPressed();
+                MenuController.maybeOf(context)?.close();
+              },
+        child: Text(label, style: TextStyle(fontSize: 15, color: iconColor)),
+      );
+    }
+
+    final iconColor = this.iconColor ?? iconTheme.color ?? context.themeData.iconTheme.color;
 
     return ConstrainedBox(
       constraints: BoxConstraints(maxWidth: maxWidth),
@@ -55,7 +86,7 @@ class BaseActionButton extends StatelessWidget {
             const SizedBox(height: 8),
             Text(
               label,
-              style: const TextStyle(fontSize: 14.0, fontWeight: FontWeight.w400),
+              style: const TextStyle(fontSize: 14.0, fontWeight: FontWeight.w500),
               maxLines: 3,
               textAlign: TextAlign.center,
               softWrap: true,

@@ -1,9 +1,8 @@
 import 'package:flutter/widgets.dart';
-
-import '../photo_view.dart';
-import 'core/photo_view_core.dart';
-import 'photo_view_default_widgets.dart';
-import 'utils/photo_view_utils.dart';
+import 'package:immich_mobile/widgets/photo_view/photo_view.dart';
+import 'package:immich_mobile/widgets/photo_view/src/core/photo_view_core.dart';
+import 'package:immich_mobile/widgets/photo_view/src/photo_view_default_widgets.dart';
+import 'package:immich_mobile/widgets/photo_view/src/utils/photo_view_utils.dart';
 
 class ImageWrapper extends StatefulWidget {
   const ImageWrapper({
@@ -28,6 +27,7 @@ class ImageWrapper extends StatefulWidget {
     required this.onDragStart,
     required this.onDragEnd,
     required this.onDragUpdate,
+    required this.onDragCancel,
     required this.onScaleEnd,
     required this.onLongPressStart,
     required this.outerSize,
@@ -62,6 +62,7 @@ class ImageWrapper extends StatefulWidget {
   final PhotoViewImageDragStartCallback? onDragStart;
   final PhotoViewImageDragEndCallback? onDragEnd;
   final PhotoViewImageDragUpdateCallback? onDragUpdate;
+  final VoidCallback? onDragCancel;
   final PhotoViewImageScaleEndCallback? onScaleEnd;
   final PhotoViewImageLongPressStartCallback? onLongPressStart;
   final Size outerSize;
@@ -74,14 +75,13 @@ class ImageWrapper extends StatefulWidget {
   final int index;
 
   @override
-  createState() => _ImageWrapperState();
+  State<ImageWrapper> createState() => _ImageWrapperState();
 }
 
 class _ImageWrapperState extends State<ImageWrapper> {
   ImageStreamListener? _imageStreamListener;
   ImageStream? _imageStream;
   ImageChunkEvent? _loadingProgress;
-  ImageInfo? _imageInfo;
   bool _loading = true;
   Size? _imageSize;
   Object? _lastException;
@@ -108,9 +108,20 @@ class _ImageWrapperState extends State<ImageWrapper> {
     }
   }
 
+  // Should be called only when _imageSize is not null
+  ScaleBoundaries get scaleBoundaries {
+    return ScaleBoundaries(
+      widget.minScale ?? 0.0,
+      widget.maxScale ?? double.infinity,
+      widget.initialScale ?? PhotoViewComputedScale.contained,
+      widget.outerSize,
+      _imageSize!,
+    );
+  }
+
   // retrieve image from the provider
   void _resolveImage() {
-    final ImageStream newStream = widget.imageProvider.resolve(const ImageConfiguration());
+    final ImageStream newStream = widget.imageProvider.resolve(ImageConfiguration.empty);
     _updateSourceStream(newStream);
   }
 
@@ -123,10 +134,9 @@ class _ImageWrapperState extends State<ImageWrapper> {
     }
 
     void handleImageFrame(ImageInfo info, bool synchronousCall) {
-      setupCB() {
+      void setupCB() {
         _imageSize = Size(info.image.width.toDouble(), info.image.height.toDouble());
         _loading = false;
-        _imageInfo = _imageInfo;
 
         _loadingProgress = null;
         _lastException = null;
@@ -191,6 +201,7 @@ class _ImageWrapperState extends State<ImageWrapper> {
         onDragStart: widget.onDragStart,
         onDragEnd: widget.onDragEnd,
         onDragUpdate: widget.onDragUpdate,
+        onDragCancel: widget.onDragCancel,
         onScaleEnd: widget.onScaleEnd,
         onLongPressStart: widget.onLongPressStart,
         outerSize: widget.outerSize,
@@ -203,14 +214,6 @@ class _ImageWrapperState extends State<ImageWrapper> {
         child: _loading ? _buildLoading(context) : _buildError(context),
       );
     }
-
-    final scaleBoundaries = ScaleBoundaries(
-      widget.minScale ?? 0.0,
-      widget.maxScale ?? double.infinity,
-      widget.initialScale ?? PhotoViewComputedScale.contained,
-      widget.outerSize,
-      _imageSize!,
-    );
 
     return PhotoViewCore(
       imageProvider: widget.imageProvider,
@@ -229,6 +232,7 @@ class _ImageWrapperState extends State<ImageWrapper> {
       onDragStart: widget.onDragStart,
       onDragEnd: widget.onDragEnd,
       onDragUpdate: widget.onDragUpdate,
+      onDragCancel: widget.onDragCancel,
       onScaleEnd: widget.onScaleEnd,
       onLongPressStart: widget.onLongPressStart,
       gestureDetectorBehavior: widget.gestureDetectorBehavior,
@@ -277,6 +281,7 @@ class CustomChildWrapper extends StatelessWidget {
     this.onDragStart,
     this.onDragEnd,
     this.onDragUpdate,
+    this.onDragCancel,
     this.onScaleEnd,
     this.onLongPressStart,
     required this.outerSize,
@@ -309,6 +314,7 @@ class CustomChildWrapper extends StatelessWidget {
   final PhotoViewImageDragStartCallback? onDragStart;
   final PhotoViewImageDragEndCallback? onDragEnd;
   final PhotoViewImageDragUpdateCallback? onDragUpdate;
+  final VoidCallback? onDragCancel;
   final PhotoViewImageScaleEndCallback? onScaleEnd;
   final PhotoViewImageLongPressStartCallback? onLongPressStart;
   final Size outerSize;
@@ -344,6 +350,7 @@ class CustomChildWrapper extends StatelessWidget {
       onDragStart: onDragStart,
       onDragEnd: onDragEnd,
       onDragUpdate: onDragUpdate,
+      onDragCancel: onDragCancel,
       onScaleEnd: onScaleEnd,
       onLongPressStart: onLongPressStart,
       gestureDetectorBehavior: gestureDetectorBehavior,

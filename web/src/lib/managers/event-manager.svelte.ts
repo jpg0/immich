@@ -1,61 +1,89 @@
-import type { ThemeSetting } from '$lib/managers/theme-manager.svelte';
-import type { LoginResponseDto } from '@immich/sdk';
+import type { TimelineAsset } from '#lib/managers/timeline-manager/types.ts';
+import { BaseEventManager } from '#lib/utils/base-event-manager.svelte.ts';
+import type {
+  AdminConfigDto,
+  AlbumResponseDto,
+  AlbumUserRole,
+  ApiKeyResponseDto,
+  AssetResponseDto,
+  IntegrityReport,
+  JobCreateDto,
+  LoginResponseDto,
+  PasskeyResponseDto,
+  PersonResponseDto,
+  ReleaseEventV1,
+  StackResponseDto,
+  UserAdminResponseDto,
+} from '@immich/sdk';
 
-type Listener<EventMap extends Record<string, unknown[]>, K extends keyof EventMap> = (...params: EventMap[K]) => void;
+export type Events = {
+  AppInit: [];
+  AppNavigate: [];
 
-class EventManager<EventMap extends Record<string, unknown[]>> {
-  private listeners: {
-    [K in keyof EventMap]?: {
-      listener: Listener<EventMap, K>;
-      once?: boolean;
-    }[];
-  } = {};
+  AuthLogin: [LoginResponseDto];
+  AuthLogout: [];
+  AuthUserLoaded: [UserAdminResponseDto];
 
-  on<T extends keyof EventMap>(key: T, listener: (...params: EventMap[T]) => void) {
-    return this.addListener(key, listener, false);
-  }
+  LanguageChange: [{ name: string; code: string; rtl?: boolean }];
 
-  once<T extends keyof EventMap>(key: T, listener: (...params: EventMap[T]) => void) {
-    return this.addListener(key, listener, true);
-  }
+  ApiKeyCreate: [ApiKeyResponseDto];
+  ApiKeyUpdate: [ApiKeyResponseDto];
+  ApiKeyDelete: [ApiKeyResponseDto];
 
-  off<K extends keyof EventMap>(key: K, listener: Listener<EventMap, K>) {
-    if (this.listeners[key]) {
-      this.listeners[key] = this.listeners[key].filter((item) => item.listener !== listener);
-    }
+  PasskeyCreate: [PasskeyResponseDto];
+  PasskeyUpdate: [PasskeyResponseDto];
+  PasskeyDelete: [PasskeyResponseDto];
 
-    return this;
-  }
+  AssetUpdate: [AssetResponseDto];
+  AssetsArchive: [string[]];
+  AssetsUnarchive: [TimelineAsset[]];
+  AssetsUndoArchive: [TimelineAsset[]];
+  AssetsDelete: [string[]];
+  AssetEditsApplied: [string];
+  AssetsTag: [string[]];
 
-  emit<T extends keyof EventMap>(key: T, ...params: EventMap[T]) {
-    if (!this.listeners[key]) {
-      return;
-    }
+  AlbumAddAssets: [{ assetIds: string[]; albumIds: string[] }];
+  AlbumRemoveAssets: [{ assetIds: string[]; albumIds: string[] }];
+  AlbumCreate: [AlbumResponseDto];
+  AlbumUpdate: [AlbumResponseDto];
+  AlbumDelete: [AlbumResponseDto];
+  AlbumShare: [];
+  AlbumUserUpdate: [{ albumId: string; userId: string; role: AlbumUserRole }];
+  AlbumUserDelete: [{ albumId: string; userId: string }];
 
-    for (const { listener } of this.listeners[key]) {
-      listener(...params);
-    }
+  PersonUpdate: [PersonResponseDto];
+  PersonShare: [{ personId: string }];
+  PersonUserDelete: [{ personId: string; userId: string }];
+  PersonThumbnailReady: [{ id: string }];
+  PersonAssetDelete: [{ id: string; assetId: string }];
 
-    // remove one time listeners
-    this.listeners[key] = this.listeners[key].filter((item) => !item.once);
-  }
+  BackupDeleteStatus: [{ filename: string; isDeleting: boolean }];
+  BackupDeleted: [{ filename: string }];
+  BackupUpload: [{ progress: number; isComplete: boolean }];
 
-  private addListener<T extends keyof EventMap>(key: T, listener: (...params: EventMap[T]) => void, once: boolean) {
-    if (!this.listeners[key]) {
-      this.listeners[key] = [];
-    }
+  StackCreate: [StackResponseDto];
+  /** Unstacked, with assets to handle */
+  StackDelete: [{ id: string; assets: AssetResponseDto[] }];
+  /** Contains the new stack. If any assets are removed, AssetUpdate events are emitted for each. */
+  StackUpdate: [StackResponseDto];
 
-    this.listeners[key].push({ listener, once });
+  UserPinCodeReset: [];
 
-    return this;
-  }
-}
+  UserAdminDeleted: [{ id: string }];
 
-export const eventManager = new EventManager<{
-  'app.init': [];
-  'user.login': [];
-  'auth.login': [LoginResponseDto];
-  'auth.logout': [];
-  'language.change': [{ name: string; code: string; rtl?: boolean }];
-  'theme.change': [ThemeSetting];
-}>();
+  SessionLocked: [];
+  SessionDelete: [];
+
+  SystemConfigUpdate: [AdminConfigDto];
+
+  IntegrityReportDeleteStatus: [{ type?: IntegrityReport; id?: string; isDeleting: boolean }];
+  IntegrityReportDeleted: [{ type?: IntegrityReport; id?: string }];
+
+  JobCreate: [{ dto: JobCreateDto }];
+
+  ReleaseEvent: [ReleaseEventV1];
+
+  WebsocketConnect: [];
+};
+
+export const eventManager = new BaseEventManager<Events>();

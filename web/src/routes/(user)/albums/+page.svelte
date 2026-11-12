@@ -1,16 +1,18 @@
 <script lang="ts">
-  import { scrollMemory } from '$lib/actions/scroll-memory';
-  import AlbumsControls from '$lib/components/album-page/albums-controls.svelte';
-  import Albums from '$lib/components/album-page/albums-list.svelte';
-  import UserPageLayout from '$lib/components/layouts/user-page-layout.svelte';
-  import EmptyPlaceholder from '$lib/components/shared-components/empty-placeholder.svelte';
-  import { AppRoute } from '$lib/constants';
-  import GroupTab from '$lib/elements/GroupTab.svelte';
-  import SearchBar from '$lib/elements/SearchBar.svelte';
-  import { AlbumFilter, albumViewSettings } from '$lib/stores/preferences.store';
-  import { createAlbumAndRedirect } from '$lib/utils/album-utils';
+  import { scrollMemory } from '#lib/actions/scroll-memory.svelte.ts';
+  import Albums from '#lib/components/album-page/AlbumsList.svelte';
+  import UserPageLayout from '#lib/components/layouts/UserPageLayout.svelte';
+  import EmptyPlaceholder from '#lib/components/shared-components/EmptyPlaceholder.svelte';
+  import GroupTab from '#lib/elements/GroupTab.svelte';
+  import SearchBar from '#lib/elements/SearchBar.svelte';
+  import { getAllAlbumsQuery } from '#lib/queries/album.query.ts';
+  import { createPreloadedQuery } from '#lib/queries/client.ts';
+  import { Route } from '#lib/route.ts';
+  import { AlbumFilter, albumViewSettings } from '#lib/stores/preferences.store.ts';
+  import { createAlbumAndRedirect } from '#lib/utils/album-utils.ts';
   import { t } from 'svelte-i18n';
   import type { PageData } from './$types';
+  import AlbumsControls from './AlbumsControls.svelte';
 
   interface Props {
     data: PageData;
@@ -18,11 +20,16 @@
 
   let { data }: Props = $props();
 
+  const queries = {
+    ownedAlbums: createPreloadedQuery(() => getAllAlbumsQuery({ isOwned: true })),
+    sharedAlbums: createPreloadedQuery(() => getAllAlbumsQuery({ isShared: true })),
+  };
+
   let searchQuery = $state('');
   let albumGroups: string[] = $state([]);
 </script>
 
-<UserPageLayout title={data.meta.title} use={[[scrollMemory, { routeStartsWith: AppRoute.ALBUMS }]]}>
+<UserPageLayout title={data.meta.title} {@attach scrollMemory({ routeStartsWith: Route.albums() })}>
   {#snippet buttons()}
     <div class="flex place-items-center gap-2">
       <AlbumsControls {albumGroups} bind:searchQuery />
@@ -30,7 +37,7 @@
   {/snippet}
 
   <div class="xl:hidden">
-    <div class="w-fit h-14 dark:text-immich-dark-fg py-2">
+    <div class="h-14 w-fit py-2 dark:text-immich-dark-fg">
       <GroupTab
         label={$t('show_albums')}
         filters={Object.keys(AlbumFilter)}
@@ -44,15 +51,15 @@
   </div>
 
   <Albums
-    ownedAlbums={data.albums}
-    sharedAlbums={data.sharedAlbums}
+    ownedAlbums={queries.ownedAlbums.data}
+    sharedAlbums={queries.sharedAlbums.data}
     userSettings={$albumViewSettings}
     allowEdit
     {searchQuery}
     bind:albumGroupIds={albumGroups}
   >
     {#snippet empty()}
-      <EmptyPlaceholder text={$t('no_albums_message')} onClick={() => createAlbumAndRedirect()} />
+      <EmptyPlaceholder text={$t('no_albums_message')} onClick={() => createAlbumAndRedirect()} class="mx-auto mt-10" />
     {/snippet}
   </Albums>
 </UserPageLayout>

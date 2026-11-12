@@ -1,35 +1,35 @@
 import { BadRequestException, ForbiddenException, Injectable, UnauthorizedException } from '@nestjs/common';
-import { isString } from 'class-validator';
-import { parse } from 'cookie';
+import { parseCookie } from 'cookie';
 import { DateTime } from 'luxon';
 import { IncomingHttpHeaders } from 'node:http';
-import { join } from 'node:path';
-import { LOGIN_URL, MOBILE_REDIRECT, SALT_ROUNDS } from 'src/constants';
-import { StorageCore } from 'src/cores/storage.core';
-import { AuthSharedLink, AuthUser, UserAdmin } from 'src/database';
+import { LOGIN_DUMMY_HASH, LOGIN_URL, MOBILE_REDIRECT, SALT_ROUNDS } from 'src/constants.js';
+import { AuthSharedLink, AuthUser, UserAdmin } from 'src/database.js';
 import {
   AuthDto,
   AuthStatusResponseDto,
   ChangePasswordDto,
   LoginCredentialDto,
   LogoutResponseDto,
+  OAuthBackchannelLogoutDto,
   OAuthCallbackDto,
   OAuthConfigDto,
+  OAuthProfile,
+  OAuthProfileSchema,
   PinCodeChangeDto,
   PinCodeResetDto,
   PinCodeSetupDto,
   SessionUnlockDto,
   SignUpDto,
-  mapLoginResponse,
-} from 'src/dtos/auth.dto';
-import { UserAdminResponseDto, mapUserAdmin } from 'src/dtos/user.dto';
-import { AuthType, ImmichCookie, ImmichHeader, ImmichQuery, JobName, Permission, StorageFolder } from 'src/enum';
-import { OAuthProfile } from 'src/repositories/oauth.repository';
-import { BaseService } from 'src/services/base.service';
-import { isGranted } from 'src/utils/access';
-import { HumanReadableSize } from 'src/utils/bytes';
-import { mimeTypes } from 'src/utils/mime-types';
-import { getUserAgentDetails } from 'src/utils/request';
+} from 'src/dtos/auth.dto.js';
+import { SystemConfig, defaults } from 'src/dtos/config.dto.js';
+import { UserAdminResponseDto, mapUserAdmin } from 'src/dtos/user.dto.js';
+import { AuthType, ImmichCookie, ImmichHeader, ImmichQuery, JobName, Permission } from 'src/enum.js';
+import { OAuthConfig, OAuthRawProfile } from 'src/repositories/oauth.repository.js';
+import { BaseService } from 'src/services/base.service.js';
+import { isGranted } from 'src/utils/access.js';
+import { generateProfileImage } from 'src/utils/profile-image.js';
+import { getUserAgentDetails } from 'src/utils/request.js';
+
 export interface LoginDetails {
   isSecure: boolean;
   clientIp: string;
@@ -38,11 +38,10 @@ export interface LoginDetails {
   appVersion: string | null;
 }
 
-interface ClaimOptions<T> {
-  key: string;
-  default: T;
-  isValid: (value: unknown) => boolean;
-}
+type OAuthClaimsConfig = Pick<
+  SystemConfig['oauth'],
+  'defaultStorageQuota' | 'storageLabelClaim' | 'storageQuotaClaim' | 'roleClaim'
+>;
 
 export type ValidateRequest = {
   headers: IncomingHttpHeaders;
@@ -64,15 +63,12 @@ export class AuthService extends BaseService {
       throw new UnauthorizedException('Password login has been disabled');
     }
 
-    let user = await this.userRepository.getByEmail(dto.email, { withPassword: true });
-    if (user) {
-      const isAuthenticated = this.validateSecret(dto.password, user.password);
-      if (!isAuthenticated) {
-        user = undefined;
-      }
-    }
+    const user = await this.userRepository.getByEmail(dto.email, { withPassword: true });
+    // Always run bcrypt so response time is constant regardless of whether the email
+    // is registered, preventing timing-based user enumeration.
+    const isAuthenticated = this.cryptoRepository.compareBcrypt(dto.password, user?.password ?? LOGIN_DUMMY_HASH);
 
-    if (!user) {
+    if (!user || !user.password || !isAuthenticated) {
       this.logger.warn(`Failed login attempt for user ${dto.email} from ip address ${details.clientIp}`);
       throw new UnauthorizedException('Incorrect email or password');
     }
@@ -81,28 +77,68 @@ export class AuthService extends BaseService {
   }
 
   async logout(auth: AuthDto, authType: AuthType): Promise<LogoutResponseDto> {
+    let oauthBearerToken: string | undefined;
     if (auth.session) {
+      const session = await this.sessionRepository.get(auth.session.id);
+      oauthBearerToken = session?.oauthBearerToken ?? undefined;
       await this.sessionRepository.delete(auth.session.id);
       await this.eventRepository.emit('SessionDelete', { sessionId: auth.session.id });
     }
 
     return {
       successful: true,
-      redirectUri: await this.getLogoutEndpoint(authType),
+      redirectUri: await this.getLogoutEndpoint(authType, oauthBearerToken),
     };
+  }
+
+  async backchannelLogout(dto: OAuthBackchannelLogoutDto): Promise<void> {
+    const { oauth } = await this.getConfig({ withCache: false });
+    if (!oauth.enabled) {
+      throw new BadRequestException('Received backchannel logout request but OAuth is not enabled');
+    }
+
+    let claims;
+    try {
+      claims = await this.oauthRepository.validateLogoutToken(oauth, dto.logout_token);
+    } catch (error: Error | any) {
+      this.logger.error(`Error backchannel logout: ${error.message}`);
+      this.logger.error(error);
+
+      throw new BadRequestException('Error backchannel logout: token validation failed');
+    }
+
+    if (!claims) {
+      throw new BadRequestException('Invalid logout token: no claims found');
+    }
+
+    if (!claims.sub && !claims.sid) {
+      throw new BadRequestException('Invalid logout token: it must contain either a sub or a sid claim');
+    }
+
+    const deletedSessionIds = await this.sessionRepository.invalidateOAuth({
+      oauthSid: claims.sid,
+      oauthId: claims.sub,
+    });
+
+    for (const sessionId of deletedSessionIds) {
+      await this.eventRepository.emit('SessionDelete', { sessionId });
+    }
   }
 
   async changePassword(auth: AuthDto, dto: ChangePasswordDto): Promise<UserAdminResponseDto> {
     const { password, newPassword } = dto;
     const user = await this.userRepository.getForChangePassword(auth.user.id);
-    const valid = this.validateSecret(password, user.password);
-    if (!valid) {
+    const isValid = this.validateSecret(password, user.password);
+    if (!isValid) {
       throw new BadRequestException('Wrong password');
     }
 
     const hashedPassword = await this.cryptoRepository.hashBcrypt(newPassword, SALT_ROUNDS);
 
-    const updatedUser = await this.userRepository.update(user.id, { password: hashedPassword });
+    const updatedUser = await this.userRepository.update(user.id, {
+      password: hashedPassword,
+      shouldChangePassword: false,
+    });
 
     await this.eventRepository.emit('AuthChangePassword', {
       userId: user.id,
@@ -165,11 +201,6 @@ export class AuthService extends BaseService {
   }
 
   async adminSignUp(dto: SignUpDto): Promise<UserAdminResponseDto> {
-    const adminUser = await this.userRepository.getAdmin();
-    if (adminUser) {
-      throw new BadRequestException('The server already has an admin');
-    }
-
     const admin = await this.createUser({
       isAdmin: true,
       email: dto.email,
@@ -237,7 +268,7 @@ export class AuthService extends BaseService {
   }
 
   getMobileRedirect(url: string) {
-    return `${MOBILE_REDIRECT}?${url.split('?')[1] || ''}`;
+    return `${MOBILE_REDIRECT}?${url.split('?', 2)[1] || ''}`;
   }
 
   async authorize(dto: OAuthConfigDto) {
@@ -255,7 +286,24 @@ export class AuthService extends BaseService {
     );
   }
 
+  private parseOAuthClaims(profile: OAuthRawProfile, oauth: OAuthConfig) {
+    const { defaultStorageQuota, storageLabelClaim, storageQuotaClaim, roleClaim } = oauth;
+
+    return OAuthProfileSchema.parse({
+      ...profile,
+      defaults: { immich_quota_bytes: defaultStorageQuota },
+      immich_storage_label: profile[storageLabelClaim],
+      immich_quota_bytes: profile[storageQuotaClaim],
+      immich_role: profile[roleClaim],
+    });
+  }
+
   async callback(dto: OAuthCallbackDto, headers: IncomingHttpHeaders, loginDetails: LoginDetails) {
+    const { oauth } = await this.getConfig({ withCache: false });
+    if (!oauth.enabled) {
+      throw new BadRequestException('OAuth is not enabled');
+    }
+
     const expectedState = dto.state ?? this.getCookieOauthState(headers);
     if (!expectedState?.length) {
       throw new BadRequestException('OAuth state is missing');
@@ -266,10 +314,14 @@ export class AuthService extends BaseService {
       throw new BadRequestException('OAuth code verifier is missing');
     }
 
-    const { oauth } = await this.getConfig({ withCache: false });
     const url = this.resolveRedirectUri(oauth, dto.url);
-    const profile = await this.oauthRepository.getProfile(oauth, url, expectedState, codeVerifier);
-    const { autoRegister, defaultStorageQuota, storageLabelClaim, storageQuotaClaim, roleClaim } = oauth;
+    const {
+      rawProfile,
+      sid: oauthSid,
+      idToken: oauthBearerToken,
+    } = await this.oauthRepository.getProfileAndOAuthSid(oauth, url, expectedState, codeVerifier);
+    const profile = this.parseOAuthClaims(rawProfile, oauth);
+    const { autoRegister } = oauth;
     this.logger.debug(`Logging in with OAuth: ${JSON.stringify(profile)}`);
     let user: UserAdmin | undefined = await this.userRepository.getByOAuthId(profile.sub);
 
@@ -278,19 +330,28 @@ export class AuthService extends BaseService {
       const emailUser = await this.userRepository.getByEmail(profile.email);
       if (emailUser) {
         if (emailUser.oauthId) {
-          throw new BadRequestException('User already exists, but is linked to another account.');
+          this.logger.debug('OAuth login conflict: email already linked to different account');
+          throw new BadRequestException('OAuth authentication failed');
         }
         user = await this.userRepository.update(emailUser.id, { oauthId: profile.sub });
       }
     }
 
+    const isAdmin = profile.immich_role === 'admin';
+
+    if (user && profile.immich_role && isAdmin !== user.isAdmin) {
+      user = await this.userRepository.update(user.id, { isAdmin });
+    }
+
     // register new user
-    if (!user) {
+    if (user) {
+      user = await this.syncOAuthClaims(user, profile, oauth);
+    } else {
       if (!autoRegister) {
         this.logger.warn(
-          `Unable to register ${profile.sub}/${profile.email || '(no email)'}. To enable set OAuth Auto Register to true in admin settings.`,
+          `Unable to register ${profile.sub}/${profile.email || '(no email)'}. User does not exist and auto registering is disabled. To enable set OAuth Auto Register to true in admin settings.`,
         );
-        throw new BadRequestException(`User does not exist and auto registering is disabled.`);
+        throw new BadRequestException('OAuth authentication failed');
       }
 
       if (!profile.email) {
@@ -299,30 +360,18 @@ export class AuthService extends BaseService {
 
       this.logger.log(`Registering new user: ${profile.sub}/${profile.email}`);
 
-      const storageLabel = this.getClaim(profile, {
-        key: storageLabelClaim,
-        default: '',
-        isValid: isString,
-      });
-      const storageQuota = this.getClaim(profile, {
-        key: storageQuotaClaim,
-        default: defaultStorageQuota,
-        isValid: (value: unknown) => Number(value) >= 0,
-      });
-      const role = this.getClaim<'admin' | 'user'>(profile, {
-        key: roleClaim,
-        default: 'user',
-        isValid: (value: unknown) => isString(value) && ['admin', 'user'].includes(value),
-      });
-
-      const userName = profile.name ?? `${profile.given_name || ''} ${profile.family_name || ''}`;
       user = await this.createUser({
-        name: userName,
+        name:
+          profile.name ||
+          `${profile.given_name || ''} ${profile.family_name || ''}`.trim() ||
+          profile.preferred_username ||
+          profile.email,
         email: profile.email,
         oauthId: profile.sub,
-        quotaSizeInBytes: storageQuota === null ? null : storageQuota * HumanReadableSize.GiB,
-        storageLabel: storageLabel || null,
-        isAdmin: role === 'admin',
+        quotaSizeInBytes:
+          profile.immich_quota_bytes === undefined ? profile.defaults.immich_quota_bytes : profile.immich_quota_bytes,
+        storageLabel: profile.immich_storage_label ?? null,
+        isAdmin,
       });
     }
 
@@ -330,22 +379,22 @@ export class AuthService extends BaseService {
       await this.syncProfilePicture(user, profile.picture);
     }
 
-    return this.createLoginResponse(user, loginDetails);
+    return this.createLoginResponse(user, loginDetails, oauthSid, oauthBearerToken);
   }
 
   private async syncProfilePicture(user: UserAdmin, url: string) {
     try {
       const oldPath = user.profileImagePath;
+      const data = await this.oauthRepository.getProfilePicture(url);
 
-      const { contentType, data } = await this.oauthRepository.getProfilePicture(url);
-      const extensionWithDot = mimeTypes.toExtension(contentType || 'image/jpeg') ?? 'jpg';
-      const profileImagePath = join(
-        StorageCore.getFolderLocation(StorageFolder.Profile, user.id),
-        `${this.cryptoRepository.randomUUID()}${extensionWithDot}`,
+      const config = await this.getConfig({ withCache: true });
+      const profileImagePath = await generateProfileImage(
+        { media: this.mediaRepository, crypto: this.cryptoRepository, storageCore: this.storageCore },
+        config,
+        user.id,
+        Buffer.from(data),
       );
 
-      this.storageCore.ensureFolders(profileImagePath);
-      await this.storageRepository.createFile(profileImagePath, Buffer.from(data));
       await this.userRepository.update(user.id, { profileImagePath, profileChangedAt: new Date() });
 
       if (oldPath) {
@@ -368,11 +417,24 @@ export class AuthService extends BaseService {
     }
 
     const { oauth } = await this.getConfig({ withCache: false });
-    const { sub: oauthId } = await this.oauthRepository.getProfile(oauth, dto.url, expectedState, codeVerifier);
+    const { rawProfile, sid, idToken } = await this.oauthRepository.getProfileAndOAuthSid(
+      oauth,
+      dto.url,
+      expectedState,
+      codeVerifier,
+    );
+    const { sub: oauthId } = this.parseOAuthClaims(rawProfile, oauth);
     const duplicate = await this.userRepository.getByOAuthId(oauthId);
     if (duplicate && duplicate.id !== auth.user.id) {
       this.logger.warn(`OAuth link account failed: sub is already linked to another user (${duplicate.email}).`);
       throw new BadRequestException('This OAuth account has already been linked to another user.');
+    }
+
+    if (auth.session && (sid || idToken)) {
+      await this.sessionRepository.update(auth.session.id, {
+        oauthSid: sid,
+        oauthBearerToken: idToken,
+      });
     }
 
     const user = await this.userRepository.update(auth.user.id, { oauthId });
@@ -380,11 +442,15 @@ export class AuthService extends BaseService {
   }
 
   async unlink(auth: AuthDto): Promise<UserAdminResponseDto> {
-    const user = await this.userRepository.update(auth.user.id, { oauthId: '' });
+    if (auth.session) {
+      await this.sessionRepository.update(auth.session.id, { oauthSid: null, oauthBearerToken: null });
+    }
+
+    const user = await this.userRepository.update(auth.user.id, { oauthId: null });
     return mapUserAdmin(user);
   }
 
-  private async getLogoutEndpoint(authType: AuthType): Promise<string> {
+  private async getLogoutEndpoint(authType: AuthType, oauthBearerToken?: string | null): Promise<string> {
     if (authType !== AuthType.OAuth) {
       return LOGIN_URL;
     }
@@ -394,11 +460,24 @@ export class AuthService extends BaseService {
       return LOGIN_URL;
     }
 
-    return (await this.oauthRepository.getLogoutEndpoint(config.oauth)) || LOGIN_URL;
+    const endSessionEndpoint =
+      config.oauth.endSessionEndpoint || (await this.oauthRepository.getLogoutEndpoint(config.oauth));
+
+    if (!endSessionEndpoint) {
+      return LOGIN_URL;
+    }
+
+    const url = new URL(endSessionEndpoint);
+
+    if (oauthBearerToken) {
+      url.searchParams.set('id_token_hint', oauthBearerToken);
+    }
+
+    return url.href;
   }
 
   private getBearerToken(headers: IncomingHttpHeaders): string | null {
-    const [type, token] = (headers.authorization || '').split(' ');
+    const [type, token] = (headers.authorization || '').split(' ', 2);
     if (type.toLowerCase() === 'bearer') {
       return token;
     }
@@ -407,17 +486,17 @@ export class AuthService extends BaseService {
   }
 
   private getCookieToken(headers: IncomingHttpHeaders): string | null {
-    const cookies = parse(headers.cookie || '');
+    const cookies = parseCookie(headers.cookie || '');
     return cookies[ImmichCookie.AccessToken] || null;
   }
 
   private getCookieOauthState(headers: IncomingHttpHeaders): string | null {
-    const cookies = parse(headers.cookie || '');
+    const cookies = parseCookie(headers.cookie || '');
     return cookies[ImmichCookie.OAuthState] || null;
   }
 
   private getCookieCodeVerifier(headers: IncomingHttpHeaders): string | null {
-    const cookies = parse(headers.cookie || '');
+    const cookies = parseCookie(headers.cookie || '');
     return cookies[ImmichCookie.OAuthCodeVerifier] || null;
   }
 
@@ -451,8 +530,8 @@ export class AuthService extends BaseService {
   }
 
   private async validateApiKey(key: string): Promise<AuthDto> {
-    const hashedKey = this.cryptoRepository.hashSha256(key);
-    const apiKey = await this.apiKeyRepository.getKey(hashedKey);
+    const hashed = this.cryptoRepository.hashSha256(key);
+    const apiKey = await this.apiKeyRepository.getKey(hashed);
     if (apiKey?.user) {
       return {
         user: apiKey.user,
@@ -471,15 +550,15 @@ export class AuthService extends BaseService {
     return this.cryptoRepository.compareBcrypt(inputSecret, existingHash);
   }
 
-  private async validateSession(tokenValue: string, headers: IncomingHttpHeaders): Promise<AuthDto> {
-    const hashedToken = this.cryptoRepository.hashSha256(tokenValue);
-    const session = await this.sessionRepository.getByToken(hashedToken);
+  private async validateSession(token: string, headers: IncomingHttpHeaders): Promise<AuthDto> {
+    const hashed = this.cryptoRepository.hashSha256(token);
+    const session = await this.sessionRepository.getByToken(hashed);
     if (session?.user) {
       const { appVersion, deviceOS, deviceType } = getUserAgentDetails(headers);
       const now = DateTime.now();
       const updatedAt = DateTime.fromJSDate(session.updatedAt);
       const diff = now.diff(updatedAt, ['hours']);
-      if (diff.hours > 1 || appVersion != session.appVersion) {
+      if (diff.hours > 1 || appVersion !== session.appVersion) {
         await this.sessionRepository.update(session.id, {
           id: session.id,
           updatedAt: new Date(),
@@ -536,24 +615,41 @@ export class AuthService extends BaseService {
     await this.sessionRepository.update(auth.session.id, { pinExpiresAt: null });
   }
 
-  private async createLoginResponse(user: UserAdmin, loginDetails: LoginDetails) {
-    const token = this.cryptoRepository.randomBytesAsText(32);
-    const tokenHashed = this.cryptoRepository.hashSha256(token);
+  private async syncOAuthClaims(user: UserAdmin, profile: OAuthProfile, oauth: OAuthClaimsConfig): Promise<UserAdmin> {
+    const updates: {
+      storageLabel?: string | null;
+      quotaSizeInBytes?: number | null;
+    } = {};
 
-    await this.sessionRepository.create({
-      token: tokenHashed,
-      deviceOS: loginDetails.deviceOS,
-      deviceType: loginDetails.deviceType,
-      appVersion: loginDetails.appVersion,
-      userId: user.id,
-    });
+    if (
+      oauth.storageLabelClaim !== defaults.oauth.storageLabelClaim &&
+      profile.immich_storage_label !== undefined &&
+      profile.immich_storage_label !== user.storageLabel
+    ) {
+      const duplicate = profile.immich_storage_label
+        ? await this.userRepository.getByStorageLabel(profile.immich_storage_label)
+        : undefined;
 
-    return mapLoginResponse(user, token);
-  }
+      if (duplicate && duplicate.id !== user.id) {
+        this.logger.warn(`Unable to sync OAuth storage label for user ${user.id}: label already in use`);
+      } else {
+        updates.storageLabel = profile.immich_storage_label;
+      }
+    }
 
-  private getClaim<T>(profile: OAuthProfile, options: ClaimOptions<T>): T {
-    const value = profile[options.key as keyof OAuthProfile];
-    return options.isValid(value) ? (value as T) : options.default;
+    if (profile.immich_quota_bytes !== undefined && profile.immich_quota_bytes !== user.quotaSizeInBytes) {
+      updates.quotaSizeInBytes = profile.immich_quota_bytes;
+    }
+
+    if (Object.keys(updates).length === 0) {
+      return user;
+    }
+
+    if (updates.quotaSizeInBytes) {
+      await this.userRepository.syncUsage(user.id);
+    }
+
+    return this.userRepository.update(user.id, { ...updates, updatedAt: new Date() });
   }
 
   private resolveRedirectUri(
@@ -561,7 +657,7 @@ export class AuthService extends BaseService {
     url: string,
   ) {
     if (mobileOverrideEnabled && mobileRedirectUri) {
-      return url.replace(/app\.immich:\/+oauth-callback/, mobileRedirectUri);
+      return url.replace(/app\.immich:\/+oauth-callback/, () => mobileRedirectUri);
     }
     return url;
   }

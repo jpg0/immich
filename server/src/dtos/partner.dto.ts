@@ -1,23 +1,33 @@
-import { IsNotEmpty } from 'class-validator';
-import { UserResponseDto } from 'src/dtos/user.dto';
-import { PartnerDirection } from 'src/repositories/partner.repository';
-import { ValidateEnum, ValidateUUID } from 'src/validation';
+import z from 'zod';
+import { UserResponseSchema } from 'src/dtos/user.dto.js';
+import { PartnerDirectionSchema } from 'src/enum.js';
+import { createZodDto } from 'src/zod.js';
 
-export class PartnerCreateDto {
-  @ValidateUUID()
-  sharedWithId!: string;
-}
+const PartnerCreateSchema = z
+  .object({
+    sharedWithId: z.uuidv4().describe('User ID to share with'),
+  })
+  .meta({ id: 'PartnerCreateDto' });
 
-export class PartnerUpdateDto {
-  @IsNotEmpty()
-  inTimeline!: boolean;
-}
+const PartnerUpdateSchema = z
+  .object({
+    inTimeline: z.boolean().describe('Show partner assets in timeline'),
+  })
+  .meta({ id: 'PartnerUpdateDto' });
 
-export class PartnerSearchDto {
-  @ValidateEnum({ enum: PartnerDirection, name: 'PartnerDirection' })
-  direction!: PartnerDirection;
-}
+const PartnerSearchSchema = z
+  .object({
+    direction: PartnerDirectionSchema,
+  })
+  .meta({ id: 'PartnerSearchDto' });
 
-export class PartnerResponseDto extends UserResponseDto {
-  inTimeline?: boolean;
-}
+const PartnerResponseSchema = UserResponseSchema.extend({
+  inTimeline: z.boolean().optional().describe('Show in timeline'),
+})
+  .describe('Partner response')
+  .meta({ id: 'PartnerResponseDto' });
+
+export class PartnerCreateDto extends createZodDto(PartnerCreateSchema) {}
+export class PartnerUpdateDto extends createZodDto(PartnerUpdateSchema) {}
+export class PartnerSearchDto extends createZodDto(PartnerSearchSchema) {}
+export class PartnerResponseDto extends createZodDto(PartnerResponseSchema) {}

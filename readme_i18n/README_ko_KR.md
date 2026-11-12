@@ -9,7 +9,9 @@
 </p>
 
 <p align="center">
-<img src="../design/immich-logo-stacked-light.svg" width="300" title="Login With Custom URL">
+  <a href="#">
+    <img src="../design/immich-logo-stacked-light.svg" width="300" alt="Immich Logo">
+  </a>
 </p>
 <h3 align="center">고성능 자체 호스팅 사진 및 동영상 관리 솔루션</h3>
 <br/>
@@ -32,19 +34,19 @@
 <a href="README_zh_TW.md">正體中文</a>
 <a href="README_uk_UA.md">Українська</a>
 <a href="README_ru_RU.md">Русский</a>
+<a href="README_bg_BG.md">Български</a>
+<a href="README_pl_PL.md">Polski</a>
 <a href="README_pt_BR.md">Português Brasileiro</a>
 <a href="README_sv_SE.md">Svenska</a>
 <a href="README_ar_JO.md">العربية</a>
 <a href="README_th_TH.md">ภาษาไทย</a>
+  <a href="README_ml_IN.md">മലയാളം</a>
 
 </p>
 
-## 주의 사항
-
-- ⚠️ 이 프로젝트는 **매우 활발하게** 개발 중입니다.
-- ⚠️ 버그와 잦은 변경 사항이 있을 것으로 예상됩니다.
-- ⚠️ **사진과 동영상을 이 앱에만 단독으로 저장하지 마세요.**
-- ⚠️ 중요한 사진과 동영상을 위해 항상 [3-2-1](https://www.backblaze.com/blog/the-3-2-1-backup-strategy/) 백업 계획을 따르세요!
+> [!WARNING]
+> ⚠️ 중요한 사진과 동영상을 위해 항상 [3-2-1](https://www.backblaze.com/blog/the-3-2-1-backup-strategy/) 백업 계획을 따르세요!
+>
 
 > [!NOTE]
 > 설치하는 방법을 포함한 주요 문서는 https://immich.app/ 에서 확인할 수 있습니다.
@@ -57,7 +59,7 @@
 - [로드맵](https://immich.app/roadmap)
 - [데모](#데모)
 - [기능](#기능)
-- [번역](https://docs.immich.app/developer/tranlations)
+- [번역](https://docs.immich.app/developer/translations)
 - [기여](https://docs.immich.app/overview/support-the-project)
 
 ## 데모
@@ -114,16 +116,6 @@
 ## 리포지터리 활동
 
 ![활동](https://repobeats.axiom.co/api/embed/9e86d9dc3ddd137161f2f6d2e758d7863b1789cb.svg "Repobeats analytics image")
-
-## 스타 기록
-
-<a href="https://star-history.com/#immich-app/immich&Date">
- <picture>
-   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=immich-app/immich&type=Date&theme=dark" />
-   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=immich-app/immich&type=Date" />
-   <img alt="스타 기록 차트" src="https://api.star-history.com/svg?repos=immich-app/immich&type=Date" width="100%" />
- </picture>
-</a>
 
 ## 기여자
 

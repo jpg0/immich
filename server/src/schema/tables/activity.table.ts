@@ -1,21 +1,21 @@
-import { UpdatedAtTrigger, UpdateIdColumn } from 'src/decorators';
-import { AlbumAssetTable } from 'src/schema/tables/album-asset.table';
-import { AlbumTable } from 'src/schema/tables/album.table';
-import { AssetTable } from 'src/schema/tables/asset.table';
-import { UserTable } from 'src/schema/tables/user.table';
 import {
   Check,
   Column,
   CreateDateColumn,
   ForeignKeyColumn,
   ForeignKeyConstraint,
-  Generated,
   Index,
   PrimaryGeneratedColumn,
   Table,
   Timestamp,
   UpdateDateColumn,
-} from 'src/sql-tools';
+  type Generated,
+} from '@immich/sql-tools';
+import { UpdateIdColumn, UpdatedAtTrigger } from 'src/decorators.js';
+import { AlbumAssetTable } from 'src/schema/tables/album-asset.table.js';
+import { AlbumTable } from 'src/schema/tables/album.table.js';
+import { AssetTable } from 'src/schema/tables/asset.table.js';
+import { UserTable } from 'src/schema/tables/user.table.js';
 
 @Table('activity')
 @UpdatedAtTrigger('activity_updatedAt')
@@ -32,7 +32,7 @@ import {
 @ForeignKeyConstraint({
   columns: ['albumId', 'assetId'],
   referenceTable: () => AlbumAssetTable,
-  referenceColumns: ['albumsId', 'assetsId'],
+  referenceColumns: ['albumId', 'assetId'],
   onUpdate: 'NO ACTION',
   onDelete: 'CASCADE',
 })

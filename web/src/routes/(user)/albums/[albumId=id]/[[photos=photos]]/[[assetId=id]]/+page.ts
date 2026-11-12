@@ -1,18 +1,14 @@
-import { authenticate } from '$lib/utils/auth';
-import { getAssetInfoFromParam } from '$lib/utils/navigation';
-import { getAlbumInfo } from '@immich/sdk';
+import { getAlbumInfoQuery } from '#lib/queries/album.query.ts';
+import { queryClient } from '#lib/queries/client.ts';
+import { authenticate } from '#lib/utils/auth.ts';
 import type { PageLoad } from './$types';
 
 export const load = (async ({ params, url }) => {
   await authenticate(url);
-  const [album, asset] = await Promise.all([
-    getAlbumInfo({ id: params.albumId, withoutAssets: true }),
-    getAssetInfoFromParam(params),
-  ]);
+
+  const album = await queryClient.query({ ...getAlbumInfoQuery(params.albumId), staleTime: 0 });
 
   return {
-    album,
-    asset,
     meta: {
       title: album.albumName,
     },

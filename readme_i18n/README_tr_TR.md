@@ -9,7 +9,9 @@
 </p>
 
 <p align="center">
-<img src="../design/immich-logo-stacked-light.svg" width="300" title="Login With Custom URL">
+  <a href="#">
+    <img src="../design/immich-logo-stacked-light.svg" width="300" alt="Immich Logo">
+  </a>
 </p>
 <h3 align="center">Immich - Yüksek performanslı, kendine ait barındırılan fotoğraf ve video yedekleme çözümü</h3>
 <br/>
@@ -31,31 +33,32 @@
   <a href="README_zh_TW.md">正體中文</a>
   <a href="README_uk_UA.md">Українська</a>
   <a href="README_ru_RU.md">Русский</a>
+  <a href="README_bg_BG.md">Български</a>
+  <a href="README_pl_PL.md">Polski</a>
   <a href="README_pt_BR.md">Português Brasileiro</a>
   <a href="README_sv_SE.md">Svenska</a>
   <a href="README_ar_JO.md">العربية</a>
   <a href="README_th_TH.md">ภาษาไทย</a>
+  <a href="README_ml_IN.md">മലയാളം</a>
 </p>
 
-## Feragatname
+> [!WARNING]
+> ⚠️ Değerli fotoğraflarınız ve videolarınız için daima [3-2-1](https://www.backblaze.com/blog/the-3-2-1-backup-strategy/) yedekleme planını uygulayın!
+> 
 
-- ⚠️ Proje **çok aktif** bir şekilde geliştirilmektedir.
-- ⚠️ Hatalar ve uygulama yapısını bozan değişiklikler olabilir.
-- ⚠️ **Uygulamayı, fotoğraflarınızı ve videolarınızı saklamanın tek yöntemi olarak kullanmayın!**
+> [!NOTE]
+> Kurulum dahil olmak üzere resmi belgeleri https://immich.app/ adresinde bulabilirsiniz.
 
-## Content
+## Bağlantılar
 
-- [Resmi Belgeler](https://docs.immich.app)
-- [Yol Haritası](https://github.com/orgs/immich-app/projects/1)
-- [Demo](#demo)
-- [Özellikler](#özellikler)
+- [Resmi Belgeler](https://docs.immich.app/)
 - [Giriş](https://docs.immich.app/overview/introduction)
 - [Kurulum](https://docs.immich.app/install/requirements)
+- [Yol Haritası](https://immich.app/roadmap)
+- [Demo](#demo)
+- [Özellikler](#özellikler)
+- [Çeviriler](https://docs.immich.app/developer/translations)
 - [Katkı Sağlama Rehberi](https://docs.immich.app/overview/support-the-project)
-
-## Belgeler
-
-Kurulum dahil olmak üzere resmi belgeleri https://immich.app/ adresinde bulabilirsiniz.
 
 ## Demo
 

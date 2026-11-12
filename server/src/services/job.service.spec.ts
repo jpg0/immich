@@ -1,10 +1,9 @@
-import { BadRequestException } from '@nestjs/common';
-import { defaults, SystemConfig } from 'src/config';
-import { ImmichWorker, JobCommand, JobName, JobStatus, QueueName } from 'src/enum';
-import { JobService } from 'src/services/job.service';
-import { JobItem } from 'src/types';
-import { assetStub } from 'test/fixtures/asset.stub';
-import { newTestService, ServiceMocks } from 'test/utils';
+import { AssetType, ImmichWorker, JobName, JobStatus, QueueName } from 'src/enum.js';
+import { JobService } from 'src/services/job.service.js';
+import type { JobItem } from 'src/types.js';
+import { AssetFactory } from 'test/factories/asset.factory.js';
+import { newUuid } from 'test/small.factory.js';
+import { ServiceMocks, newTestService } from 'test/utils.js';
 
 describe(JobService.name, () => {
   let sut: JobService;
@@ -20,210 +19,19 @@ describe(JobService.name, () => {
     expect(sut).toBeDefined();
   });
 
-  describe('onConfigUpdate', () => {
-    it('should update concurrency', () => {
-      sut.onConfigUpdate({ newConfig: defaults, oldConfig: {} as SystemConfig });
-
-      expect(mocks.job.setConcurrency).toHaveBeenCalledTimes(16);
-      expect(mocks.job.setConcurrency).toHaveBeenNthCalledWith(5, QueueName.FacialRecognition, 1);
-      expect(mocks.job.setConcurrency).toHaveBeenNthCalledWith(7, QueueName.DuplicateDetection, 1);
-      expect(mocks.job.setConcurrency).toHaveBeenNthCalledWith(8, QueueName.BackgroundTask, 5);
-      expect(mocks.job.setConcurrency).toHaveBeenNthCalledWith(9, QueueName.StorageTemplateMigration, 1);
-    });
-  });
-
-  describe('handleNightlyJobs', () => {
-    it('should run the scheduled jobs', async () => {
-      await sut.handleNightlyJobs();
-
-      expect(mocks.job.queueAll).toHaveBeenCalledWith([
-        { name: JobName.AssetDeleteCheck },
-        { name: JobName.UserDeleteCheck },
-        { name: JobName.PersonCleanup },
-        { name: JobName.MemoryCleanup },
-        { name: JobName.SessionCleanup },
-        { name: JobName.AuditTableCleanup },
-        { name: JobName.AuditLogCleanup },
-        { name: JobName.MemoryGenerate },
-        { name: JobName.UserSyncUsage },
-        { name: JobName.AssetGenerateThumbnailsQueueAll, data: { force: false } },
-        { name: JobName.FacialRecognitionQueueAll, data: { force: false, nightly: true } },
-      ]);
-    });
-  });
-
-  describe('getAllJobStatus', () => {
-    it('should get all job statuses', async () => {
-      mocks.job.getJobCounts.mockResolvedValue({
-        active: 1,
-        completed: 1,
-        failed: 1,
-        delayed: 1,
-        waiting: 1,
-        paused: 1,
-      });
-      mocks.job.getQueueStatus.mockResolvedValue({
-        isActive: true,
-        isPaused: true,
-      });
-
-      const expectedJobStatus = {
-        jobCounts: {
-          active: 1,
-          completed: 1,
-          delayed: 1,
-          failed: 1,
-          waiting: 1,
-          paused: 1,
-        },
-        queueStatus: {
-          isActive: true,
-          isPaused: true,
-        },
-      };
-
-      await expect(sut.getAllJobsStatus()).resolves.toEqual({
-        [QueueName.BackgroundTask]: expectedJobStatus,
-        [QueueName.DuplicateDetection]: expectedJobStatus,
-        [QueueName.SmartSearch]: expectedJobStatus,
-        [QueueName.MetadataExtraction]: expectedJobStatus,
-        [QueueName.Search]: expectedJobStatus,
-        [QueueName.StorageTemplateMigration]: expectedJobStatus,
-        [QueueName.Migration]: expectedJobStatus,
-        [QueueName.ThumbnailGeneration]: expectedJobStatus,
-        [QueueName.VideoConversion]: expectedJobStatus,
-        [QueueName.FaceDetection]: expectedJobStatus,
-        [QueueName.FacialRecognition]: expectedJobStatus,
-        [QueueName.Sidecar]: expectedJobStatus,
-        [QueueName.Library]: expectedJobStatus,
-        [QueueName.Notification]: expectedJobStatus,
-        [QueueName.BackupDatabase]: expectedJobStatus,
-        [QueueName.Ocr]: expectedJobStatus,
-      });
-    });
-  });
-
-  describe('handleCommand', () => {
-    it('should handle a pause command', async () => {
-      await sut.handleCommand(QueueName.MetadataExtraction, { command: JobCommand.Pause, force: false });
-
-      expect(mocks.job.pause).toHaveBeenCalledWith(QueueName.MetadataExtraction);
-    });
-
-    it('should handle a resume command', async () => {
-      await sut.handleCommand(QueueName.MetadataExtraction, { command: JobCommand.Resume, force: false });
-
-      expect(mocks.job.resume).toHaveBeenCalledWith(QueueName.MetadataExtraction);
-    });
-
-    it('should handle an empty command', async () => {
-      await sut.handleCommand(QueueName.MetadataExtraction, { command: JobCommand.Empty, force: false });
-
-      expect(mocks.job.empty).toHaveBeenCalledWith(QueueName.MetadataExtraction);
-    });
-
-    it('should not start a job that is already running', async () => {
-      mocks.job.getQueueStatus.mockResolvedValue({ isActive: true, isPaused: false });
-
-      await expect(
-        sut.handleCommand(QueueName.VideoConversion, { command: JobCommand.Start, force: false }),
-      ).rejects.toBeInstanceOf(BadRequestException);
-
-      expect(mocks.job.queue).not.toHaveBeenCalled();
-      expect(mocks.job.queueAll).not.toHaveBeenCalled();
-    });
-
-    it('should handle a start video conversion command', async () => {
-      mocks.job.getQueueStatus.mockResolvedValue({ isActive: false, isPaused: false });
-
-      await sut.handleCommand(QueueName.VideoConversion, { command: JobCommand.Start, force: false });
-
-      expect(mocks.job.queue).toHaveBeenCalledWith({ name: JobName.AssetEncodeVideoQueueAll, data: { force: false } });
-    });
-
-    it('should handle a start storage template migration command', async () => {
-      mocks.job.getQueueStatus.mockResolvedValue({ isActive: false, isPaused: false });
-
-      await sut.handleCommand(QueueName.StorageTemplateMigration, { command: JobCommand.Start, force: false });
-
-      expect(mocks.job.queue).toHaveBeenCalledWith({ name: JobName.StorageTemplateMigration });
-    });
-
-    it('should handle a start smart search command', async () => {
-      mocks.job.getQueueStatus.mockResolvedValue({ isActive: false, isPaused: false });
-
-      await sut.handleCommand(QueueName.SmartSearch, { command: JobCommand.Start, force: false });
-
-      expect(mocks.job.queue).toHaveBeenCalledWith({ name: JobName.SmartSearchQueueAll, data: { force: false } });
-    });
-
-    it('should handle a start metadata extraction command', async () => {
-      mocks.job.getQueueStatus.mockResolvedValue({ isActive: false, isPaused: false });
-
-      await sut.handleCommand(QueueName.MetadataExtraction, { command: JobCommand.Start, force: false });
-
-      expect(mocks.job.queue).toHaveBeenCalledWith({
-        name: JobName.AssetExtractMetadataQueueAll,
-        data: { force: false },
-      });
-    });
-
-    it('should handle a start sidecar command', async () => {
-      mocks.job.getQueueStatus.mockResolvedValue({ isActive: false, isPaused: false });
-
-      await sut.handleCommand(QueueName.Sidecar, { command: JobCommand.Start, force: false });
-
-      expect(mocks.job.queue).toHaveBeenCalledWith({ name: JobName.SidecarQueueAll, data: { force: false } });
-    });
-
-    it('should handle a start thumbnail generation command', async () => {
-      mocks.job.getQueueStatus.mockResolvedValue({ isActive: false, isPaused: false });
-
-      await sut.handleCommand(QueueName.ThumbnailGeneration, { command: JobCommand.Start, force: false });
-
-      expect(mocks.job.queue).toHaveBeenCalledWith({
-        name: JobName.AssetGenerateThumbnailsQueueAll,
-        data: { force: false },
-      });
-    });
-
-    it('should handle a start face detection command', async () => {
-      mocks.job.getQueueStatus.mockResolvedValue({ isActive: false, isPaused: false });
-
-      await sut.handleCommand(QueueName.FaceDetection, { command: JobCommand.Start, force: false });
-
-      expect(mocks.job.queue).toHaveBeenCalledWith({ name: JobName.AssetDetectFacesQueueAll, data: { force: false } });
-    });
-
-    it('should handle a start facial recognition command', async () => {
-      mocks.job.getQueueStatus.mockResolvedValue({ isActive: false, isPaused: false });
-
-      await sut.handleCommand(QueueName.FacialRecognition, { command: JobCommand.Start, force: false });
-
-      expect(mocks.job.queue).toHaveBeenCalledWith({ name: JobName.FacialRecognitionQueueAll, data: { force: false } });
-    });
-
-    it('should handle a start backup database command', async () => {
-      mocks.job.getQueueStatus.mockResolvedValue({ isActive: false, isPaused: false });
-
-      await sut.handleCommand(QueueName.BackupDatabase, { command: JobCommand.Start, force: false });
-
-      expect(mocks.job.queue).toHaveBeenCalledWith({ name: JobName.DatabaseBackup, data: { force: false } });
-    });
-
-    it('should throw a bad request when an invalid queue is used', async () => {
-      mocks.job.getQueueStatus.mockResolvedValue({ isActive: false, isPaused: false });
-
-      await expect(
-        sut.handleCommand(QueueName.BackgroundTask, { command: JobCommand.Start, force: false }),
-      ).rejects.toBeInstanceOf(BadRequestException);
-
-      expect(mocks.job.queue).not.toHaveBeenCalled();
-      expect(mocks.job.queueAll).not.toHaveBeenCalled();
-    });
-  });
-
   describe('onJobRun', () => {
+    it('should queue metadata extraction when sidecar discovery is skipped', async () => {
+      const job: JobItem = { name: JobName.SidecarCheck, data: { id: 'asset-1', source: 'upload' } };
+      mocks.job.run.mockResolvedValue(JobStatus.Skipped);
+
+      await sut.onJobRun(QueueName.Sidecar, job);
+
+      expect(mocks.job.queue).toHaveBeenCalledExactlyOnceWith({
+        name: JobName.AssetExtractMetadata,
+        data: job.data,
+      });
+    });
+
     it('should process a successful job', async () => {
       mocks.job.run.mockResolvedValue(JobStatus.Success);
 
@@ -236,15 +44,32 @@ describe(JobService.name, () => {
       expect(mocks.logger.error).not.toHaveBeenCalled();
     });
 
+    it.each([JobStatus.Success, JobStatus.Skipped])(
+      'should queue metadata extraction after a %s sidecar check and preserve its source',
+      async (status) => {
+        mocks.job.run.mockResolvedValue(status);
+        const job: JobItem = { name: JobName.SidecarCheck, data: { id: 'asset-1', source: 'upload' } };
+
+        await sut.onJobRun(QueueName.Sidecar, job);
+
+        expect(mocks.job.queue).toHaveBeenCalledExactlyOnceWith({
+          name: JobName.AssetExtractMetadata,
+          data: { id: 'asset-1', source: 'upload' },
+        });
+        expect(mocks.job.queueAll).not.toHaveBeenCalled();
+      },
+    );
+
+    it('should not queue metadata extraction after a failed sidecar check', async () => {
+      mocks.job.run.mockResolvedValue(JobStatus.Failed);
+
+      await sut.onJobRun(QueueName.Sidecar, { name: JobName.SidecarCheck, data: { id: 'asset-1', source: 'upload' } });
+
+      expect(mocks.job.queue).not.toHaveBeenCalled();
+      expect(mocks.job.queueAll).not.toHaveBeenCalled();
+    });
+
     const tests: Array<{ item: JobItem; jobs: JobName[]; stub?: any }> = [
-      {
-        item: { name: JobName.SidecarCheck, data: { id: 'asset-1' } },
-        jobs: [JobName.AssetExtractMetadata],
-      },
-      {
-        item: { name: JobName.SidecarCheck, data: { id: 'asset-1' } },
-        jobs: [JobName.AssetExtractMetadata],
-      },
       {
         item: { name: JobName.StorageTemplateMigrationSingle, data: { id: 'asset-1', source: 'upload' } },
         jobs: [JobName.AssetGenerateThumbnails],
@@ -254,28 +79,28 @@ describe(JobService.name, () => {
         jobs: [],
       },
       {
-        item: { name: JobName.PersonGenerateThumbnail, data: { id: 'asset-1' } },
+        item: { name: JobName.PersonGenerateThumbnail, data: { ownerId: 'owner-1', personGroupId: 'person-group-1' } },
         jobs: [],
       },
       {
         item: { name: JobName.AssetGenerateThumbnails, data: { id: 'asset-1' } },
         jobs: [],
-        stub: [assetStub.image],
+        stub: [AssetFactory.create({ id: 'asset-1' })],
       },
       {
         item: { name: JobName.AssetGenerateThumbnails, data: { id: 'asset-1' } },
         jobs: [],
-        stub: [assetStub.video],
+        stub: [AssetFactory.create({ id: 'asset-1', type: AssetType.Video })],
       },
       {
         item: { name: JobName.AssetGenerateThumbnails, data: { id: 'asset-1', source: 'upload' } },
         jobs: [JobName.SmartSearch, JobName.AssetDetectFaces, JobName.Ocr],
-        stub: [assetStub.livePhotoStillAsset],
+        stub: [AssetFactory.create({ id: 'asset-1', livePhotoVideoId: newUuid() })],
       },
       {
         item: { name: JobName.AssetGenerateThumbnails, data: { id: 'asset-1', source: 'upload' } },
         jobs: [JobName.SmartSearch, JobName.AssetDetectFaces, JobName.Ocr, JobName.AssetEncodeVideo],
-        stub: [assetStub.video],
+        stub: [AssetFactory.create({ id: 'asset-1', type: AssetType.Video })],
       },
       {
         item: { name: JobName.SmartSearch, data: { id: 'asset-1' } },
@@ -294,6 +119,7 @@ describe(JobService.name, () => {
     for (const { item, jobs, stub } of tests) {
       it(`should queue ${jobs.length} jobs when a ${item.name} job finishes successfully`, async () => {
         if (stub) {
+          mocks.asset.getById.mockResolvedValue(stub[0]);
           mocks.asset.getByIdsWithAllRelationsButStacks.mockResolvedValue(stub);
         }
 

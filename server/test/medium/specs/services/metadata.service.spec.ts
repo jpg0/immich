@@ -1,24 +1,21 @@
+import { Kysely } from 'kysely';
 import { Stats } from 'node:fs';
-import { writeFile } from 'node:fs/promises';
+import { mkdtempDisposable, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { LoggingRepository } from 'src/repositories/logging.repository';
-import { MetadataRepository } from 'src/repositories/metadata.repository';
-import { MetadataService } from 'src/services/metadata.service';
-import { automock, newRandomImage, newTestService, ServiceMocks } from 'test/utils';
-
-const metadataRepository = new MetadataRepository(
-  // eslint-disable-next-line no-sparse-arrays
-  automock(LoggingRepository, { args: [, { getEnv: () => ({}) }], strict: false }),
-);
-
-const createTestFile = async (exifData: Record<string, any>) => {
-  const data = newRandomImage();
-  const filePath = join(tmpdir(), 'test.png');
-  await writeFile(filePath, data);
-  await metadataRepository.writeTags(filePath, exifData);
-  return { filePath };
-};
+import { AssetJobRepository } from 'src/repositories/asset-job.repository.js';
+import { AssetRepository } from 'src/repositories/asset.repository.js';
+import { ConfigRepository } from 'src/repositories/config.repository.js';
+import { EventRepository } from 'src/repositories/event.repository.js';
+import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { MetadataRepository } from 'src/repositories/metadata.repository.js';
+import { StorageRepository } from 'src/repositories/storage.repository.js';
+import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
+import { TagRepository } from 'src/repositories/tag.repository.js';
+import { DB } from 'src/schema/index.js';
+import { MetadataService } from 'src/services/metadata.service.js';
+import { newMediumService } from 'test/medium.factory.js';
+import { getKyselyDB, newRandomImage } from 'test/utils.js';
 
 type TimeZoneTest = {
   description: string;
@@ -31,25 +28,84 @@ type TimeZoneTest = {
   };
 };
 
-describe(MetadataService.name, () => {
-  let sut: MetadataService;
-  let mocks: ServiceMocks;
+let defaultDatabase: Kysely<DB>;
 
-  beforeEach(() => {
-    ({ sut, mocks } = newTestService(MetadataService, { metadata: metadataRepository }));
+// eslint-disable-next-line unicorn/no-unnecessary-parameters
+const setup = (db?: Kysely<DB>, { realStorage = false } = {}) => {
+  const { sut, ctx } = newMediumService(MetadataService, {
+    database: db || defaultDatabase,
+    real: [
+      AssetRepository,
+      AssetJobRepository,
+      ConfigRepository,
+      MetadataRepository,
+      SystemMetadataRepository,
+      TagRepository,
+      ...(realStorage ? [StorageRepository] : []),
+    ],
+    mock: [EventRepository, LoggingRepository, ...(realStorage ? [] : [StorageRepository])],
+  });
 
-    mocks.storage.stat.mockResolvedValue({
+  if (!realStorage) {
+    ctx.getMock(StorageRepository).stat.mockResolvedValue({
       size: 123_456,
       mtime: new Date(654_321),
       mtimeMs: 654_321,
       birthtimeMs: 654_322,
     } as Stats);
+  }
 
-    delete process.env.TZ;
+  return { sut, ctx };
+};
+
+const createTestFile = async (exifData: Record<string, any>) => {
+  const { ctx } = setup();
+  const data = newRandomImage();
+  const filePath = join(tmpdir(), 'test.png');
+  await writeFile(filePath, data);
+  await ctx.get(MetadataRepository).writeTags(filePath, exifData);
+  return { filePath };
+};
+
+beforeAll(async () => {
+  defaultDatabase = await getKyselyDB();
+});
+
+describe(MetadataService.name, () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
   });
 
   it('should be defined', () => {
+    const { sut } = setup();
     expect(sut).toBeDefined();
+  });
+
+  describe('sidecar metadata extraction', () => {
+    it('should persist metadata read from a discovered XMP sidecar', async () => {
+      await using tempDir = await mkdtempDisposable(join(tmpdir(), 'immich-sidecar-'));
+      const { sut, ctx } = setup(undefined, { realStorage: true });
+      const originalPath = join(tempDir.path, 'photo.png');
+      await writeFile(originalPath, newRandomImage());
+      const metadata = ctx.get(MetadataRepository);
+      await metadata.writeTags(originalPath, { Rating: 1 });
+      await metadata.writeTags(`${originalPath}.xmp`, { Rating: 5, DateTimeOriginal: '2024:07:11 10:32:52+00:00' });
+      const { user } = await ctx.newUser();
+      const { asset } = await ctx.newAsset({ originalPath, ownerId: user.id });
+      await ctx.newExif({ assetId: asset.id, description: '' });
+      ctx.getMock(EventRepository).emit.mockResolvedValue();
+
+      await sut.handleSidecarCheck({ id: asset.id });
+      await sut.handleMetadataExtraction({ id: asset.id });
+
+      await expect(
+        ctx.database
+          .selectFrom('asset_exif')
+          .where('assetId', '=', asset.id)
+          .select(['rating', 'dateTimeOriginal'])
+          .executeTakeFirstOrThrow(),
+      ).resolves.toEqual({ rating: 5, dateTimeOriginal: new Date('2024-07-11T10:32:52.000Z') });
+    });
   });
 
   describe('handleMetadataExtraction', () => {
@@ -62,42 +118,6 @@ describe(MetadataService.name, () => {
         expected: {
           localDateTime: '2022-01-01T00:00:00.000Z',
           dateTimeOriginal: '2022-01-01T00:00:00.000Z',
-          timeZone: null,
-        },
-      },
-      {
-        description: 'should handle no time zone information and server behind UTC',
-        serverTimeZone: 'America/Los_Angeles',
-        exifData: {
-          DateTimeOriginal: '2022:01:01 00:00:00',
-        },
-        expected: {
-          localDateTime: '2022-01-01T00:00:00.000Z',
-          dateTimeOriginal: '2022-01-01T08:00:00.000Z',
-          timeZone: null,
-        },
-      },
-      {
-        description: 'should handle no time zone information and server ahead of UTC',
-        serverTimeZone: 'Europe/Brussels',
-        exifData: {
-          DateTimeOriginal: '2022:01:01 00:00:00',
-        },
-        expected: {
-          localDateTime: '2022-01-01T00:00:00.000Z',
-          dateTimeOriginal: '2021-12-31T23:00:00.000Z',
-          timeZone: null,
-        },
-      },
-      {
-        description: 'should handle no time zone information and server ahead of UTC in the summer',
-        serverTimeZone: 'Europe/Brussels',
-        exifData: {
-          DateTimeOriginal: '2022:06:01 00:00:00',
-        },
-        expected: {
-          localDateTime: '2022-06-01T00:00:00.000Z',
-          dateTimeOriginal: '2022-05-31T22:00:00.000Z',
           timeZone: null,
         },
       },
@@ -115,25 +135,124 @@ describe(MetadataService.name, () => {
     ];
 
     it.each(timeZoneTests)('$description', async ({ exifData, serverTimeZone, expected }) => {
-      process.env.TZ = serverTimeZone ?? undefined;
+      vi.stubEnv('TZ', serverTimeZone);
 
+      const { sut, ctx } = setup();
+      ctx.getMock(EventRepository).emit.mockResolvedValue();
       const { filePath } = await createTestFile(exifData);
-      mocks.assetJob.getForMetadataExtraction.mockResolvedValue({ id: 'asset-1', originalPath: filePath } as any);
+      const { user } = await ctx.newUser();
+      const { asset } = await ctx.newAsset({ originalPath: filePath, ownerId: user.id });
+      await ctx.newExif({ assetId: asset.id, description: '' });
 
-      await sut.handleMetadataExtraction({ id: 'asset-1' });
+      await sut.handleMetadataExtraction({ id: asset.id });
 
-      expect(mocks.asset.upsertExif).toHaveBeenCalledWith(
-        expect.objectContaining({
-          dateTimeOriginal: new Date(expected.dateTimeOriginal),
-          timeZone: expected.timeZone,
-        }),
-      );
+      await expect(
+        ctx.database
+          .selectFrom('asset_exif')
+          .select(['dateTimeOriginal', 'timeZone', 'lockedProperties'])
+          .where('assetId', '=', asset.id)
+          .executeTakeFirstOrThrow(),
+      ).resolves.toEqual({
+        dateTimeOriginal: new Date(expected.dateTimeOriginal),
+        timeZone: expected.timeZone,
+        lockedProperties: null,
+      });
 
-      expect(mocks.asset.update).toHaveBeenCalledWith(
-        expect.objectContaining({
-          localDateTime: new Date(expected.localDateTime),
-        }),
+      await expect(ctx.get(AssetRepository).getById(asset.id)).resolves.toEqual(
+        expect.objectContaining({ localDateTime: new Date(expected.localDateTime) }),
       );
     });
+
+    it('should handle dates far in the future', async () => {
+      const { sut, ctx } = setup();
+      ctx.getMock(EventRepository).emit.mockResolvedValue();
+      const { filePath } = await createTestFile({ CreateDate: '42603:05:04 04:12:48' });
+      const { user } = await ctx.newUser();
+      const { asset } = await ctx.newAsset({ originalPath: filePath, ownerId: user.id });
+      await ctx.newExif({ assetId: asset.id, description: '' });
+
+      await sut.handleMetadataExtraction({ id: asset.id });
+
+      await expect(
+        ctx.database
+          .selectFrom('asset_exif')
+          .where('assetId', '=', asset.id)
+          .select('dateTimeOriginal')
+          .executeTakeFirstOrThrow(),
+        // note that this date is technically wrong. it does not throw though and should get the user's attention either way.
+      ).resolves.toEqual({ dateTimeOriginal: new Date('4260-03-05T04:04:12.000Z') });
+    });
+
+    it('should ignore IFD1 thumbnail orientation when extracting metadata', async () => {
+      const { sut, ctx } = setup();
+      ctx.getMock(EventRepository).emit.mockResolvedValue();
+      const { filePath } = await createTestFile({ 'IFD1:Orientation#': 6 });
+      const { user } = await ctx.newUser();
+      const { asset } = await ctx.newAsset({ originalPath: filePath, ownerId: user.id });
+      await ctx.newExif({ assetId: asset.id, description: '' });
+
+      await sut.handleMetadataExtraction({ id: asset.id });
+
+      await expect(
+        ctx.database
+          .selectFrom('asset_exif')
+          .select('orientation')
+          .where('assetId', '=', asset.id)
+          .executeTakeFirstOrThrow(),
+      ).resolves.toEqual({ orientation: null });
+    });
+
+    it('should ignore IFD1 thumbnail dimensions when extracting metadata', async () => {
+      const { sut, ctx } = setup();
+      ctx.getMock(EventRepository).emit.mockResolvedValue();
+      const { filePath } = await createTestFile({ 'IFD1:ImageWidth#': 160, 'IFD1:ImageHeight#': 120 });
+      const { user } = await ctx.newUser();
+      const { asset } = await ctx.newAsset({ originalPath: filePath, ownerId: user.id });
+      await ctx.newExif({ assetId: asset.id, description: '' });
+
+      await sut.handleMetadataExtraction({ id: asset.id });
+
+      await expect(ctx.get(AssetRepository).getById(asset.id)).resolves.toEqual(
+        expect.objectContaining({ width: 1, height: 1 }),
+      );
+    });
+
+    it('should keep IFD0 orientation when extracting metadata', async () => {
+      const { sut, ctx } = setup();
+      ctx.getMock(EventRepository).emit.mockResolvedValue();
+      const { filePath } = await createTestFile({ 'IFD0:Orientation#': 6 });
+      const { user } = await ctx.newUser();
+      const { asset } = await ctx.newAsset({ originalPath: filePath, ownerId: user.id });
+      await ctx.newExif({ assetId: asset.id, description: '' });
+
+      await sut.handleMetadataExtraction({ id: asset.id });
+
+      await expect(
+        ctx.database
+          .selectFrom('asset_exif')
+          .select('orientation')
+          .where('assetId', '=', asset.id)
+          .executeTakeFirstOrThrow(),
+      ).resolves.toEqual({ orientation: '6' });
+    });
+  });
+
+  it('should handle float lens models (#30492)', async () => {
+    const { sut, ctx } = setup();
+    ctx.getMock(EventRepository).emit.mockResolvedValue();
+    const { filePath } = await createTestFile({ LensModel: 1.8 });
+    const { user } = await ctx.newUser();
+    const { asset } = await ctx.newAsset({ originalPath: filePath, ownerId: user.id });
+    await ctx.newExif({ assetId: asset.id, description: '' });
+
+    await sut.handleMetadataExtraction({ id: asset.id });
+
+    await expect(
+      ctx.database
+        .selectFrom('asset_exif')
+        .where('assetId', '=', asset.id)
+        .select('lensModel')
+        .executeTakeFirstOrThrow(),
+    ).resolves.toEqual({ lensModel: '1.8' });
   });
 });

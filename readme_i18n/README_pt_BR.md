@@ -9,7 +9,9 @@
 </p>
 
 <p align="center">
-<img src="../design/immich-logo-stacked-light.svg" width="150" title="Immich Logo">
+  <a href="#">
+    <img src="../design/immich-logo-stacked-light.svg" width="150" alt="Immich Logo">
+  </a>
 </p>
 <h3 align="center">Solução self-hosted de alta performance para backup de fotos e vídeos</h3>
 <br/>
@@ -33,23 +35,19 @@
 <a href="README_zh_TW.md">正體中文</a>
 <a href="README_uk_UA.md">Українська</a>
 <a href="README_ru_RU.md">Русский</a>
+<a href="README_bg_BG.md">Български</a>
+<a href="README_pl_PL.md">Polski</a>
 <a href="README_sv_SE.md">Svenska</a>
 <a href="README_ar_JO.md">العربية</a>
 <a href="README_vi_VN.md">Tiếng Việt</a>
 <a href="README_th_TH.md">ภาษาไทย</a>
+  <a href="README_ml_IN.md">മലയാളം</a>
 
 </p>
 
-## Avisos
-
-- ⚠️ Este projeto está sob **desenvolvimento constante**.
-- ⚠️ Podem ocorrer bugs e _breaking changes_ (alterações que quebram a
-  compatibilidade com versões anteriores).
-- ⚠️ **Não use esta solução como a única forma de fazer backup das suas fotos e
-  vídeos.**
-- ⚠️ Sempre siga o plano
-  [3-2-1](https://www.backblaze.com/blog/the-3-2-1-backup-strategy/) de backup
-  para as suas mídias preciosas!
+> [!WARNING]
+> ⚠️ Sempre siga o plano [3-2-1](https://www.backblaze.com/blog/the-3-2-1-backup-strategy/) de backup para as suas mídias preciosas!
+>
 
 > [!NOTE]
 > Você pode encontrar a documentação principal, incluindo guias de instalação, em https://immich.app/.
@@ -125,16 +123,6 @@ Leia mais sobre as traduções
 ## Atividade do repositório
 
 ![Activities](https://repobeats.axiom.co/api/embed/9e86d9dc3ddd137161f2f6d2e758d7863b1789cb.svg "Imagem de análise de atividade Repobeats")
-
-## Histórico de estrelas
-
-<a href="https://star-history.com/#immich-app/immich&Date">
- <picture>
-   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=immich-app/immich&type=Date&theme=dark" />
-   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=immich-app/immich&type=Date" />
-   <img alt="Gráfico de histórico de estrelas" src="https://api.star-history.com/svg?repos=immich-app/immich&type=Date" width="100%" />
- </picture>
-</a>
 
 ## Contribuidores
 

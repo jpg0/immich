@@ -1,15 +1,15 @@
 import { Injectable } from '@nestjs/common';
 import { ModuleRef, Reflector } from '@nestjs/core';
-import { ClassConstructor } from 'class-transformer';
-import _ from 'lodash';
+import { orderBy } from 'lodash-es';
 import { Socket } from 'socket.io';
-import { SystemConfig } from 'src/config';
-import { EventConfig } from 'src/decorators';
-import { AuthDto } from 'src/dtos/auth.dto';
-import { ImmichWorker, JobStatus, MetadataKey, QueueName, UserAvatarColor, UserStatus } from 'src/enum';
-import { ConfigRepository } from 'src/repositories/config.repository';
-import { LoggingRepository } from 'src/repositories/logging.repository';
-import { JobItem, JobSource } from 'src/types';
+import { Asset } from 'src/database.js';
+import { EventConfig } from 'src/decorators.js';
+import { AuthDto } from 'src/dtos/auth.dto.js';
+import { SystemConfig } from 'src/dtos/config.dto.js';
+import { ImmichWorker, JobStatus, MetadataKey, QueueName, UserAvatarColor, UserStatus } from 'src/enum.js';
+import { ConfigRepository } from 'src/repositories/config.repository.js';
+import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import type { JobItem, JobSource, UploadFile } from 'src/types.js';
 
 type EmitHandlers = Partial<{ [T in EmitEvent]: Array<EventItem<T>> }>;
 
@@ -25,6 +25,7 @@ type EventMap = {
   // app events
   AppBootstrap: [];
   AppShutdown: [];
+  AppRestart: [AppRestartEvent];
 
   ConfigInit: [{ newConfig: SystemConfig }];
   // config events
@@ -37,17 +38,22 @@ type EventMap = {
   ConfigValidate: [{ newConfig: SystemConfig; oldConfig: SystemConfig }];
 
   // album events
-  AlbumUpdate: [{ id: string; recipientId: string }];
-  AlbumInvite: [{ id: string; userId: string }];
+  AlbumUpdate: [{ id: string; userIds: string[]; recipientIds: string[] }];
+  AlbumInvite: [{ id: string; userId: string; senderName: string }];
+
+  // cluster group events
+  ClusterGroupRequest: [{ clusterGroupId: string; userId: string; senderName: string }];
 
   // asset events
-  AssetTag: [{ assetId: string }];
+  AssetCreate: [{ asset: Pick<Asset, 'id' | 'ownerId'>; file?: UploadFile }];
+  AssetTag: [{ assetId: string; userId: string }];
   AssetUntag: [{ assetId: string }];
   AssetHide: [{ assetId: string; userId: string }];
   AssetShow: [{ assetId: string; userId: string }];
   AssetTrash: [{ assetId: string; userId: string }];
   AssetDelete: [{ assetId: string; userId: string }];
   AssetMetadataExtracted: [{ assetId: string; userId: string; source?: JobSource }];
+  AssetOcrExtracted: [{ assetId: string; userId: string }];
 
   // asset bulk events
   AssetTrashAll: [{ assetIds: string[]; userId: string }];
@@ -64,6 +70,10 @@ type EventMap = {
   JobSuccess: [JobSuccessEvent];
   /** job finishes with error */
   JobError: [JobErrorEvent];
+
+  LibraryCreate: [];
+  LibraryUpdate: [];
+  LibraryDelete: [];
 
   // queue events
   QueueStart: [QueueStartEvent];
@@ -90,8 +100,20 @@ type EventMap = {
 
   AuthChangePassword: [{ userId: string; currentSessionId?: string; invalidateSessions?: boolean }];
 
+  // hls streaming events
+  HlsSegmentRequest: [{ sessionId: string; assetId: string; variantIndex: number; segmentIndex: number }];
+  HlsSegmentResult: [{ sessionId: string; variantIndex: number; segmentIndex: number; error?: string }];
+  HlsHeartbeat: [{ sessionId: string; variantIndex?: number; segmentIndex?: number }];
+  HlsSessionRequest: [{ sessionId: string; assetId: string; ownerId: string }];
+  HlsSessionResult: [{ sessionId: string; error?: string }];
+  HlsSessionEnd: [{ sessionId: string }];
+
   // websocket events
   WebsocketConnect: [{ userId: string }];
+};
+
+export type AppRestartEvent = {
+  isMaintenanceMode: boolean;
 };
 
 type JobSuccessEvent = { job: JobItem; response?: JobStatus };
@@ -113,7 +135,7 @@ type UserEvent = {
   isAdmin: boolean;
   shouldChangePassword: boolean;
   avatarColor: UserAvatarColor | null;
-  oauthId: string;
+  oauthId: string | null;
   storageLabel: string | null;
   quotaSizeInBytes: number | null;
   quotaUsageInBytes: number;
@@ -145,7 +167,7 @@ export class EventRepository {
     this.logger.setContext(EventRepository.name);
   }
 
-  setup({ services }: { services: ClassConstructor<unknown>[] }) {
+  setup({ services }: { services: (new (...args: any[]) => unknown)[] }) {
     const reflector = this.moduleRef.get(Reflector, { strict: false });
     const items: Item<EmitEvent>[] = [];
     const worker = this.configRepository.getWorker();
@@ -188,7 +210,7 @@ export class EventRepository {
       }
     }
 
-    const handlers = _.orderBy(items, ['priority'], ['asc']);
+    const handlers = orderBy(items, ['priority'], ['asc']);
 
     // register by priority
     for (const handler of handlers) {
@@ -199,11 +221,11 @@ export class EventRepository {
   private addHandler<T extends EmitEvent>(item: Item<T>): void {
     const event = item.event;
 
-    if (!this.emitHandlers[event]) {
+    if (!Object.hasOwn(this.emitHandlers, event)) {
       this.emitHandlers[event] = [];
     }
 
-    this.emitHandlers[event].push(item);
+    this.emitHandlers[event]!.push(item);
   }
 
   emit<T extends EmitEvent>(event: T, ...args: ArgsOf<T>): Promise<void> {

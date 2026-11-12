@@ -1,12 +1,13 @@
 import { Kysely } from 'kysely';
-import { AlbumUserRole, SyncEntityType, SyncRequestType } from 'src/enum';
-import { AlbumUserRepository } from 'src/repositories/album-user.repository';
-import { DB } from 'src/schema';
-import { SyncTestContext } from 'test/medium.factory';
-import { getKyselyDB, wait } from 'test/utils';
+import { AlbumUserRole, SyncEntityType, SyncRequestType } from 'src/enum.js';
+import { AlbumUserRepository } from 'src/repositories/album-user.repository.js';
+import { DB } from 'src/schema/index.js';
+import { SyncTestContext } from 'test/medium.factory.js';
+import { getKyselyDB, wait } from 'test/utils.js';
 
 let defaultDatabase: Kysely<DB>;
 
+// eslint-disable-next-line unicorn/no-unnecessary-parameters
 const setup = async (db?: Kysely<DB>) => {
   const ctx = new SyncTestContext(db || defaultDatabase);
   const { auth, user, session } = await ctx.newSyncAuthUser();
@@ -24,7 +25,16 @@ describe(SyncRequestType.AlbumUsersV1, () => {
     const { user } = await ctx.newUser();
     const { albumUser } = await ctx.newAlbumUser({ albumId: album.id, userId: user.id, role: AlbumUserRole.Editor });
 
-    await expect(ctx.syncStream(auth, [SyncRequestType.AlbumUsersV1])).resolves.toEqual([
+    const response = await ctx.syncStream(auth, [SyncRequestType.AlbumUsersV1]);
+    ctx.assertSyncResponse(response, [
+      {
+        ack: expect.any(String),
+        data: expect.objectContaining({
+          albumId: album.id,
+          role: AlbumUserRole.Owner,
+        }),
+        type: SyncEntityType.AlbumUserV1,
+      },
       {
         ack: expect.any(String),
         data: expect.objectContaining({
@@ -34,7 +44,6 @@ describe(SyncRequestType.AlbumUsersV1, () => {
         }),
         type: SyncEntityType.AlbumUserV1,
       },
-      expect.objectContaining({ type: SyncEntityType.SyncCompleteV1 }),
     ]);
   });
 
@@ -46,7 +55,15 @@ describe(SyncRequestType.AlbumUsersV1, () => {
       const { albumUser } = await ctx.newAlbumUser({ albumId: album.id, userId: user1.id, role: AlbumUserRole.Editor });
 
       const response = await ctx.syncStream(auth, [SyncRequestType.AlbumUsersV1]);
-      expect(response).toEqual([
+      ctx.assertSyncResponse(response, [
+        {
+          ack: expect.any(String),
+          data: expect.objectContaining({
+            albumId: album.id,
+            role: AlbumUserRole.Owner,
+          }),
+          type: SyncEntityType.AlbumUserV1,
+        },
         {
           ack: expect.any(String),
           data: expect.objectContaining({
@@ -56,7 +73,6 @@ describe(SyncRequestType.AlbumUsersV1, () => {
           }),
           type: SyncEntityType.AlbumUserV1,
         },
-        expect.objectContaining({ type: SyncEntityType.SyncCompleteV1 }),
       ]);
 
       await ctx.syncAckAll(auth, response);
@@ -74,9 +90,9 @@ describe(SyncRequestType.AlbumUsersV1, () => {
       await ctx.syncAckAll(auth, response);
       await ctx.assertSyncIsComplete(auth, [SyncRequestType.AlbumUsersV1]);
 
-      await albumUserRepo.update({ albumsId: album.id, usersId: user1.id }, { role: AlbumUserRole.Viewer });
+      await albumUserRepo.update({ albumId: album.id, userId: user1.id }, { role: AlbumUserRole.Viewer });
       const newResponse = await ctx.syncStream(auth, [SyncRequestType.AlbumUsersV1]);
-      expect(newResponse).toEqual([
+      ctx.assertSyncResponse(newResponse, [
         {
           ack: expect.any(String),
           data: expect.objectContaining({
@@ -86,7 +102,6 @@ describe(SyncRequestType.AlbumUsersV1, () => {
           }),
           type: SyncEntityType.AlbumUserV1,
         },
-        expect.objectContaining({ type: SyncEntityType.SyncCompleteV1 }),
       ]);
 
       await ctx.syncAckAll(auth, newResponse);
@@ -104,9 +119,9 @@ describe(SyncRequestType.AlbumUsersV1, () => {
       await ctx.syncAckAll(auth, response);
       await ctx.assertSyncIsComplete(auth, [SyncRequestType.AlbumUsersV1]);
 
-      await albumUserRepo.delete({ albumsId: album.id, usersId: user1.id });
+      await albumUserRepo.delete({ albumId: album.id, userId: user1.id });
       const newResponse = await ctx.syncStream(auth, [SyncRequestType.AlbumUsersV1]);
-      expect(newResponse).toEqual([
+      ctx.assertSyncResponse(newResponse, [
         {
           ack: expect.any(String),
           data: expect.objectContaining({
@@ -115,7 +130,6 @@ describe(SyncRequestType.AlbumUsersV1, () => {
           }),
           type: SyncEntityType.AlbumUserDeleteV1,
         },
-        expect.objectContaining({ type: SyncEntityType.SyncCompleteV1 }),
       ]);
 
       await ctx.syncAckAll(auth, newResponse);
@@ -135,7 +149,15 @@ describe(SyncRequestType.AlbumUsersV1, () => {
       });
 
       const response = await ctx.syncStream(auth, [SyncRequestType.AlbumUsersV1]);
-      expect(response).toEqual([
+      ctx.assertSyncResponse(response, [
+        {
+          ack: expect.any(String),
+          data: expect.objectContaining({
+            albumId: album.id,
+            role: AlbumUserRole.Owner,
+          }),
+          type: SyncEntityType.AlbumUserV1,
+        },
         {
           ack: expect.any(String),
           data: expect.objectContaining({
@@ -145,7 +167,6 @@ describe(SyncRequestType.AlbumUsersV1, () => {
           }),
           type: SyncEntityType.AlbumUserV1,
         },
-        expect.objectContaining({ type: SyncEntityType.SyncCompleteV1 }),
       ]);
 
       await ctx.syncAckAll(auth, response);
@@ -162,18 +183,18 @@ describe(SyncRequestType.AlbumUsersV1, () => {
       await ctx.newAlbumUser({ albumId: album.id, userId: user.id, role: AlbumUserRole.Editor });
 
       const response = await ctx.syncStream(auth, [SyncRequestType.AlbumUsersV1]);
-      expect(response).toEqual([
+      ctx.assertSyncResponse(response, [
         expect.objectContaining({ type: SyncEntityType.AlbumUserV1 }),
         expect.objectContaining({ type: SyncEntityType.AlbumUserV1 }),
-        expect.objectContaining({ type: SyncEntityType.SyncCompleteV1 }),
+        expect.objectContaining({ type: SyncEntityType.AlbumUserV1 }),
       ]);
 
       await ctx.syncAckAll(auth, response);
       await ctx.assertSyncIsComplete(auth, [SyncRequestType.AlbumUsersV1]);
 
-      await albumUserRepo.update({ albumsId: album.id, usersId: user.id }, { role: AlbumUserRole.Viewer });
+      await albumUserRepo.update({ albumId: album.id, userId: user.id }, { role: AlbumUserRole.Viewer });
       const newResponse = await ctx.syncStream(auth, [SyncRequestType.AlbumUsersV1]);
-      expect(newResponse).toEqual([
+      ctx.assertSyncResponse(newResponse, [
         {
           ack: expect.any(String),
           data: expect.objectContaining({
@@ -183,7 +204,6 @@ describe(SyncRequestType.AlbumUsersV1, () => {
           }),
           type: SyncEntityType.AlbumUserV1,
         },
-        expect.objectContaining({ type: SyncEntityType.SyncCompleteV1 }),
       ]);
 
       await ctx.syncAckAll(auth, newResponse);
@@ -200,18 +220,18 @@ describe(SyncRequestType.AlbumUsersV1, () => {
       await ctx.newAlbumUser({ albumId: album.id, userId: user.id, role: AlbumUserRole.Editor });
 
       const response = await ctx.syncStream(auth, [SyncRequestType.AlbumUsersV1]);
-      expect(response).toEqual([
+      ctx.assertSyncResponse(response, [
         expect.objectContaining({ type: SyncEntityType.AlbumUserV1 }),
         expect.objectContaining({ type: SyncEntityType.AlbumUserV1 }),
-        expect.objectContaining({ type: SyncEntityType.SyncCompleteV1 }),
+        expect.objectContaining({ type: SyncEntityType.AlbumUserV1 }),
       ]);
       await ctx.syncAckAll(auth, response);
 
       await ctx.assertSyncIsComplete(auth, [SyncRequestType.AlbumUsersV1]);
-      await albumUserRepo.delete({ albumsId: album.id, usersId: user.id });
+      await albumUserRepo.delete({ albumId: album.id, userId: user.id });
 
       const newResponse = await ctx.syncStream(auth, [SyncRequestType.AlbumUsersV1]);
-      expect(newResponse).toEqual([
+      ctx.assertSyncResponse(newResponse, [
         {
           ack: expect.any(String),
           data: expect.objectContaining({
@@ -220,7 +240,6 @@ describe(SyncRequestType.AlbumUsersV1, () => {
           }),
           type: SyncEntityType.AlbumUserDeleteV1,
         },
-        expect.objectContaining({ type: SyncEntityType.SyncCompleteV1 }),
       ]);
 
       await ctx.syncAckAll(auth, newResponse);
@@ -229,10 +248,12 @@ describe(SyncRequestType.AlbumUsersV1, () => {
 
     it('should backfill album users when a user shares an album with you', async () => {
       const { auth, ctx } = await setup();
+      const { user } = await ctx.newUser();
       const { user: user1 } = await ctx.newUser();
       const { user: user2 } = await ctx.newUser();
-      const { album: album1 } = await ctx.newAlbum({ ownerId: user1.id });
-      const { album: album2 } = await ctx.newAlbum({ ownerId: user1.id });
+      const { album: album1 } = await ctx.newAlbum({ ownerId: user.id });
+      const { album: album2 } = await ctx.newAlbum({ ownerId: user.id });
+      await wait(2);
       // backfill album user
       await ctx.newAlbumUser({ albumId: album1.id, userId: user1.id, role: AlbumUserRole.Editor });
       await wait(2);
@@ -243,7 +264,16 @@ describe(SyncRequestType.AlbumUsersV1, () => {
       await ctx.newAlbumUser({ albumId: album1.id, userId: user2.id, role: AlbumUserRole.Editor });
 
       const response = await ctx.syncStream(auth, [SyncRequestType.AlbumUsersV1]);
-      expect(response).toEqual([
+      ctx.assertSyncResponse(response, [
+        {
+          ack: expect.any(String),
+          data: expect.objectContaining({
+            albumId: album2.id,
+            role: AlbumUserRole.Owner,
+            userId: user.id,
+          }),
+          type: SyncEntityType.AlbumUserV1,
+        },
         {
           ack: expect.any(String),
           data: expect.objectContaining({
@@ -253,7 +283,6 @@ describe(SyncRequestType.AlbumUsersV1, () => {
           }),
           type: SyncEntityType.AlbumUserV1,
         },
-        expect.objectContaining({ type: SyncEntityType.SyncCompleteV1 }),
       ]);
 
       // ack initial user
@@ -264,6 +293,15 @@ describe(SyncRequestType.AlbumUsersV1, () => {
       // should backfill the album user
       const newResponse = await ctx.syncStream(auth, [SyncRequestType.AlbumUsersV1]);
       expect(newResponse).toEqual([
+        {
+          ack: expect.any(String),
+          data: expect.objectContaining({
+            albumId: album1.id,
+            role: AlbumUserRole.Owner,
+            userId: user.id,
+          }),
+          type: SyncEntityType.AlbumUserBackfillV1,
+        },
         {
           ack: expect.any(String),
           data: expect.objectContaining({

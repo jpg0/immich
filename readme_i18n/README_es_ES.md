@@ -9,7 +9,9 @@
 </p>
 
 <p align="center">
-<img src="../design/immich-logo-stacked-light.svg" width="300" title="Iniciar sesión con URL personalizada">
+  <a href="#">
+    <img src="../design/immich-logo-stacked-light.svg" width="300" alt="Immich Logo">
+  </a>
 </p>
 <h3 align="center">Immich: Una solución Self-Hosted de alto rendimiento para la copia de seguridad de fotos y videos</h3>
 <br/>
@@ -31,32 +33,32 @@
   <a href="README_zh_TW.md">正體中文</a>
   <a href="README_uk_UA.md">Українська</a>
   <a href="README_ru_RU.md">Русский</a>
+  <a href="README_bg_BG.md">Български</a>
+  <a href="README_pl_PL.md">Polski</a>
   <a href="README_pt_BR.md">Português Brasileiro</a>
   <a href="README_sv_SE.md">Svenska</a>
   <a href="README_ar_JO.md">العربية</a>
   <a href="README_th_TH.md">ภาษาไทย</a>
+  <a href="README_ml_IN.md">മലയാളം</a>
 </p>
 
-## Advertencia
+> [!WARNING]
+> ⚠️ Siempre sigue el plan de backups [3-2-1](https://www.backblaze.com/blog/the-3-2-1-backup-strategy/) para tus fotos y videos.
+>
 
-- ⚠️ El proyecto está en **activo desarrollo**.
-- ⚠️ Es probable que haya errores y cambios disruptivos.
-- ⚠️ **¡No utilices la aplicación como única forma de almacenar tus fotos y videos!**
-- ⚠️ Siempre sigue el plan de backups [3-2-1](https://www.backblaze.com/blog/the-3-2-1-backup-strategy/) para tus fotos y videos.
+> [!NOTE]
+> Puedes encontrar la documentación oficial, incluidas las guías de instalación, en <https://immich.app/>.
 
 ## Contenido
 
-- [Documentación oficial](https://docs.immich.app)
-- [Hoja de ruta](https://github.com/orgs/immich-app/projects/1)
-- [Demo](#demo)
-- [Funciones](#funciones)
+- [Documentación](https://docs.immich.app/)
 - [Introducción](https://docs.immich.app/overview/introduction)
 - [Instalación](https://docs.immich.app/install/requirements)
+- [Hoja de ruta](https://immich.app/roadmap)
+- [Demo](#demo)
+- [Funciones](#funciones)
+- [Traducciones](https://docs.immich.app/developer/translations)
 - [Directrices para contribuir](https://docs.immich.app/overview/support-the-project)
-
-## Documentación
-
-Puedes encontrar la documentación oficial, incluidas las guías de instalación, en <https://immich.app/>.
 
 ## Demo
 
@@ -109,16 +111,6 @@ Lea mas acerca de las traducciones [acá](https://docs.immich.app/developer/tran
 ## Actividad del repositorio
 
 ![Activities](https://repobeats.axiom.co/api/embed/9e86d9dc3ddd137161f2f6d2e758d7863b1789cb.svg "Repobeats analytics image")
-
-## Historial de Estrellas
-
-<a href="https://star-history.com/#immich-app/immich&Date">
- <picture>
-   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=immich-app/immich&type=Date&theme=dark" />
-   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=immich-app/immich&type=Date" />
-   <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=immich-app/immich&type=Date" width="100%" />
- </picture>
-</a>
 
 ## Contribuidores
 

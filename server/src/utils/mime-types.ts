@@ -1,7 +1,7 @@
-import { extname } from 'node:path';
-import { AssetType } from 'src/enum';
+import { AssetType } from 'src/enum.js';
+import { getFilenameExtension } from 'src/utils/file.js';
 
-const raw: Record<string, string[]> = {
+const raw = {
   '.3fr': ['image/3fr', 'image/x-hasselblad-3fr'],
   '.ari': ['image/ari', 'image/x-arriflex-ari'],
   '.arw': ['image/arw', 'image/x-sony-arw'],
@@ -35,40 +35,82 @@ const raw: Record<string, string[]> = {
 };
 
 /**
- * list of supported image extensions from https://developer.mozilla.org/en-US/docs/Web/Media/Formats/Image_types excluding svg
- * @TODO share with the client
- * @see {@link web/src/lib/utils/asset-utils.ts#L329}
- **/
+list of supported image extensions from https://developer.mozilla.org/en-US/docs/Web/Media/Formats/Image_types excluding svg
+@TODO share with the client
+@see {@link web/src/lib/utils/asset-utils.ts#L329}
+*/
 const webSupportedImage = {
   '.avif': ['image/avif'],
+  '.bmp': ['image/bmp'],
   '.gif': ['image/gif'],
+  '.jfif': ['image/jpeg'],
   '.jpeg': ['image/jpeg'],
   '.jpg': ['image/jpeg'],
   '.png': ['image/png', 'image/apng'],
   '.webp': ['image/webp'],
 };
 
-const image: Record<string, string[]> = {
+const webUnsupportedImage = {
   ...raw,
-  ...webSupportedImage,
-  '.bmp': ['image/bmp'],
   '.heic': ['image/heic'],
   '.heif': ['image/heif'],
-  '.hif': ['image/hif'],
+  '.hif': ['image/heif'],
   '.insp': ['image/jpeg'],
   '.jp2': ['image/jp2'],
   '.jpe': ['image/jpeg'],
   '.jxl': ['image/jxl'],
+  '.mpo': ['image/jpeg'],
   '.svg': ['image/svg'],
   '.tif': ['image/tiff'],
   '.tiff': ['image/tiff'],
 };
 
+const image: Record<string, string[]> = {
+  ...webSupportedImage,
+  ...webUnsupportedImage,
+};
+
+const possiblyAnimatedImageExtensions = new Set(['.avif', '.gif', '.heic', '.heif', '.jxl', '.png', '.webp']);
+const possiblyAnimatedImage: Record<string, string[]> = Object.fromEntries(
+  Object.entries(image).filter(([key]) => possiblyAnimatedImageExtensions.has(key)),
+);
+
+const heifImageExtensions = new Set(['.avif', '.heic', '.heif', '.hif']);
+const heifImage: Record<string, string[]> = Object.fromEntries(
+  Object.entries(image).filter(([key]) => heifImageExtensions.has(key)),
+);
+
 const extensionOverrides: Record<string, string> = {
   'image/jpeg': '.jpg',
 };
 
-const profileExtensions = new Set(['.avif', '.dng', '.heic', '.heif', '.jpeg', '.jpg', '.png', '.webp', '.svg']);
+const transparentCapableExtensions = new Set([
+  '.avif',
+  '.bmp',
+  '.gif',
+  '.heic',
+  '.heif',
+  '.hif',
+  '.jxl',
+  '.png',
+  '.svg',
+  '.tif',
+  '.tiff',
+  '.webp',
+]);
+
+const profileExtensions = new Set([
+  '.avif',
+  '.dng',
+  '.heic',
+  '.heif',
+  '.jfif',
+  '.jpeg',
+  '.jpg',
+  '.png',
+  '.webp',
+  '.svg',
+]);
 const profile: Record<string, string[]> = Object.fromEntries(
   Object.entries(image).filter(([key]) => profileExtensions.has(key)),
 );
@@ -89,6 +131,8 @@ const video: Record<string, string[]> = {
   '.mpeg': ['video/mpeg'],
   '.mpg': ['video/mpeg'],
   '.mts': ['video/mp2t'],
+  '.mxf': ['application/mxf'],
+  '.ts': ['video/mp2t'],
   '.vob': ['video/mpeg'],
   '.webm': ['video/webm'],
   '.wmv': ['video/x-ms-wmv'],
@@ -100,9 +144,12 @@ const sidecar: Record<string, string[]> = {
 
 const types = { ...image, ...video, ...sidecar };
 
-const isType = (filename: string, r: Record<string, string[]>) => extname(filename).toLowerCase() in r;
+const isType = (filename: string, r: Record<string, string[]>) =>
+  Object.hasOwn(r, getFilenameExtension(filename).toLowerCase());
 
-const lookup = (filename: string) => types[extname(filename).toLowerCase()]?.[0] ?? 'application/octet-stream';
+const lookup = (filename: string) =>
+  types[getFilenameExtension(filename).toLowerCase()]?.[0] ?? 'application/octet-stream';
+
 const toExtension = (mimeType: string) => {
   return (
     extensionOverrides[mimeType] || Object.entries(types).find(([, mimeTypes]) => mimeTypes.includes(mimeType))?.[0]
@@ -115,13 +162,18 @@ export const mimeTypes = {
   sidecar,
   video,
   raw,
+  webUnsupportedImage,
 
   isAsset: (filename: string) => isType(filename, image) || isType(filename, video),
   isImage: (filename: string) => isType(filename, image),
   isWebSupportedImage: (filename: string) => isType(filename, webSupportedImage),
+  isHeifImage: (filename: string) => isType(filename, heifImage),
+  isPossiblyAnimatedImage: (filename: string) => isType(filename, possiblyAnimatedImage),
   isProfile: (filename: string) => isType(filename, profile),
   isSidecar: (filename: string) => isType(filename, sidecar),
   isVideo: (filename: string) => isType(filename, video),
+  canBeTransparent: (filename: string) =>
+    transparentCapableExtensions.has(getFilenameExtension(filename).toLowerCase()),
   isRaw: (filename: string) => isType(filename, raw),
   lookup,
   /** return an extension (including a leading `.`) for a mime-type */
@@ -130,9 +182,12 @@ export const mimeTypes = {
     const contentType = lookup(filename);
     if (contentType.startsWith('image/')) {
       return AssetType.Image;
-    } else if (contentType.startsWith('video/')) {
+    }
+
+    if (contentType === 'application/mxf' || contentType.startsWith('video/')) {
       return AssetType.Video;
     }
+
     return AssetType.Other;
   },
   getSupportedFileExtensions: () => [...Object.keys(image), ...Object.keys(video)],

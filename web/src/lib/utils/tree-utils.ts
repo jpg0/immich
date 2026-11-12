@@ -49,10 +49,12 @@ export class TreeNode extends Map<string, TreeNode> {
       // segments common to all subtrees can be collapsed together
       curPart = curPart === null ? part : joinPaths(curPart, part);
       const next = current.get(curPart);
-      if (next) {
-        current = next;
-        curPart = null;
+      if (!next) {
+        continue;
       }
+
+      current = next;
+      curPart = null;
     }
     return current;
   }
@@ -62,8 +64,16 @@ export class TreeNode extends Map<string, TreeNode> {
       const child = this.values().next().value!;
       child.value = joinPaths(this.value, child.value);
       child.parent = this.parent;
-      this.parent.delete(this.value);
-      this.parent.set(child.value, child);
+
+      const entries = Array.from(this.parent.entries());
+      this.parent.clear();
+      for (const [key, value] of entries) {
+        if (key === this.value) {
+          this.parent.set(child.value, child);
+        } else {
+          this.parent.set(key, value);
+        }
+      }
     }
 
     for (const child of this.values()) {

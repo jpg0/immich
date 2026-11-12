@@ -9,7 +9,9 @@
 </p>
 
 <p align="center">
-<img src="../design/immich-logo-stacked-light.svg" width="300" title="Login With Custom URL">
+  <a href="#">
+    <img src="../design/immich-logo-stacked-light.svg" width="300" alt="Immich Logo">
+  </a>
 </p>
 <h3 align="center">Högpresterande self-hostad lösning för hantering av foton och videor</h3>
 <br/>
@@ -33,31 +35,31 @@
   <a href="README_zh_TW.md">正體中文</a>
   <a href="README_uk_UA.md">Українська</a>
   <a href="README_ru_RU.md">Русский</a>
+  <a href="README_bg_BG.md">Български</a>
+  <a href="README_pl_PL.md">Polski</a>
   <a href="README_pt_BR.md">Português Brasileiro</a>
   <a href="README_ar_JO.md">العربية</a>
   <a href="README_th_TH.md">ภาษาไทย</a>
+  <a href="README_ml_IN.md">മലയാളം</a>
 </p>
 
-## Ansvarsfriskrivning
+> [!WARNING]
+> ⚠️ Tillämpa alltid [3-2-1](https://www.backblaze.com/blog/the-3-2-1-backup-strategy/)-strategin för säkerhetskopiering av dina foton och videor!
+>
 
-- ⚠️ Projektet är under **mycket aktiv** utveckling.
-- ⚠️ Förvänta dig buggar och brytande förändringar.
-- ⚠️ **Använd inte appen som enda lagringssätt för dina foton och videor.**
-- ⚠️ Tillämpa alltid [3-2-1](https://www.backblaze.com/blog/the-3-2-1-backup-strategy/)-strategin för säkerhetskopiering av dina foton och videor!
+> [!NOTE]
+> Dokumentation och installationsguider hittas på https://immich.app/.
 
 ## Innehåll
 
-- [Officiell Dokumentation](https://docs.immich.app)
-- [Roadmap](https://github.com/orgs/immich-app/projects/1)
-- [Demo](#demo)
-- [Funktioner](#features)
+- [Officiell Dokumentation](https://docs.immich.app/)
 - [Introduktion](https://docs.immich.app/overview/introduction)
 - [Installation](https://docs.immich.app/install/requirements)
+- [Roadmap](https://immich.app/roadmap)
+- [Demo](#demo)
+- [Funktioner](#funktioner)
+- [Översättningar](https://docs.immich.app/developer/translations)
 - [Riktlinjer för Bidrag](https://docs.immich.app/overview/support-the-project)
-
-## Dokumentation
-
-Dokumentation och installationsguider hittas på https://imiich.app/.
 
 ## Demo
 
@@ -112,14 +114,4 @@ lösenord: demo
 
 <a href="https://github.com/alextran1502/immich/graphs/contributors">
   <img src="https://contrib.rocks/image?repo=immich-app/immich" width="100%"/>
-</a>
-
-## Stjärn-Historik
-
-<a href="https://star-history.com/#immich-app/immich&Date">
- <picture>
-   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=immich-app/immich&type=Date&theme=dark" />
-   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=immich-app/immich&type=Date" />
-   <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=immich-app/immich&type=Date" width="100%" />
- </picture>
 </a>

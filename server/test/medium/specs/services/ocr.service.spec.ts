@@ -1,25 +1,27 @@
 import { Kysely } from 'kysely';
-import { AssetFileType, JobStatus } from 'src/enum';
-import { AssetJobRepository } from 'src/repositories/asset-job.repository';
-import { AssetRepository } from 'src/repositories/asset.repository';
-import { ConfigRepository } from 'src/repositories/config.repository';
-import { JobRepository } from 'src/repositories/job.repository';
-import { LoggingRepository } from 'src/repositories/logging.repository';
-import { MachineLearningRepository } from 'src/repositories/machine-learning.repository';
-import { OcrRepository } from 'src/repositories/ocr.repository';
-import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository';
-import { DB } from 'src/schema';
-import { OcrService } from 'src/services/ocr.service';
-import { newMediumService } from 'test/medium.factory';
-import { getKyselyDB } from 'test/utils';
+import { AssetFileType, JobStatus } from 'src/enum.js';
+import { AssetJobRepository } from 'src/repositories/asset-job.repository.js';
+import { AssetRepository } from 'src/repositories/asset.repository.js';
+import { ConfigRepository } from 'src/repositories/config.repository.js';
+import { EventRepository } from 'src/repositories/event.repository.js';
+import { JobRepository } from 'src/repositories/job.repository.js';
+import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { MachineLearningRepository } from 'src/repositories/machine-learning.repository.js';
+import { OcrRepository } from 'src/repositories/ocr.repository.js';
+import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
+import { DB } from 'src/schema/index.js';
+import { OcrService } from 'src/services/ocr.service.js';
+import { newMediumService } from 'test/medium.factory.js';
+import { getKyselyDB } from 'test/utils.js';
 
 let defaultDatabase: Kysely<DB>;
 
+// eslint-disable-next-line unicorn/no-unnecessary-parameters
 const setup = (db?: Kysely<DB>) => {
   return newMediumService(OcrService, {
     database: db || defaultDatabase,
     real: [AssetRepository, AssetJobRepository, ConfigRepository, OcrRepository, SystemMetadataRepository],
-    mock: [JobRepository, LoggingRepository, MachineLearningRepository],
+    mock: [EventRepository, JobRepository, LoggingRepository, MachineLearningRepository],
   });
 };
 
@@ -38,6 +40,7 @@ describe(OcrService.name, () => {
     const { user } = await ctx.newUser();
     const { asset } = await ctx.newAsset({ ownerId: user.id });
     await ctx.newAssetFile({ assetId: asset.id, type: AssetFileType.Preview, path: 'preview.jpg' });
+    ctx.getMock(EventRepository).emit.mockResolvedValue();
 
     const machineLearningMock = ctx.getMock(MachineLearningRepository);
     machineLearningMock.ocr.mockResolvedValue({
@@ -55,8 +58,11 @@ describe(OcrService.name, () => {
         assetId: asset.id,
         boxScore: 0.99,
         id: expect.any(String),
+        updateId: expect.any(String),
+        updatedAt: expect.any(Date),
         text: 'Test OCR',
         textScore: 0.95,
+        isVisible: true,
         x1: 10,
         y1: 10,
         x2: 50,
@@ -87,6 +93,7 @@ describe(OcrService.name, () => {
     const { user } = await ctx.newUser();
     const { asset } = await ctx.newAsset({ ownerId: user.id });
     await ctx.newAssetFile({ assetId: asset.id, type: AssetFileType.Preview, path: 'preview.jpg' });
+    ctx.getMock(EventRepository).emit.mockResolvedValue();
 
     const machineLearningMock = ctx.getMock(MachineLearningRepository);
     machineLearningMock.ocr.mockResolvedValue({
@@ -104,8 +111,11 @@ describe(OcrService.name, () => {
         assetId: asset.id,
         boxScore: 0.7,
         id: expect.any(String),
+        updateId: expect.any(String),
+        updatedAt: expect.any(Date),
         text: 'One',
         textScore: 0.9,
+        isVisible: true,
         x1: 0,
         y1: 1,
         x2: 2,
@@ -119,8 +129,11 @@ describe(OcrService.name, () => {
         assetId: asset.id,
         boxScore: 0.67,
         id: expect.any(String),
+        updateId: expect.any(String),
+        updatedAt: expect.any(Date),
         text: 'Two',
         textScore: 0.89,
+        isVisible: true,
         x1: 8,
         y1: 9,
         x2: 10,
@@ -134,8 +147,11 @@ describe(OcrService.name, () => {
         assetId: asset.id,
         boxScore: 0.65,
         id: expect.any(String),
+        updateId: expect.any(String),
+        updatedAt: expect.any(Date),
         text: 'Three',
         textScore: 0.88,
+        isVisible: true,
         x1: 16,
         y1: 17,
         x2: 18,
@@ -149,8 +165,11 @@ describe(OcrService.name, () => {
         assetId: asset.id,
         boxScore: 0.62,
         id: expect.any(String),
+        updateId: expect.any(String),
+        updatedAt: expect.any(Date),
         text: 'Four',
         textScore: 0.87,
+        isVisible: true,
         x1: 24,
         y1: 25,
         x2: 26,
@@ -164,8 +183,11 @@ describe(OcrService.name, () => {
         assetId: asset.id,
         boxScore: 0.6,
         id: expect.any(String),
+        updateId: expect.any(String),
+        updatedAt: expect.any(Date),
         text: 'Five',
         textScore: 0.86,
+        isVisible: true,
         x1: 32,
         y1: 33,
         x2: 34,
@@ -196,6 +218,7 @@ describe(OcrService.name, () => {
     const { user } = await ctx.newUser();
     const { asset } = await ctx.newAsset({ ownerId: user.id });
     await ctx.newAssetFile({ assetId: asset.id, type: AssetFileType.Preview, path: 'preview.jpg' });
+    ctx.getMock(EventRepository).emit.mockResolvedValue();
 
     const machineLearningMock = ctx.getMock(MachineLearningRepository);
     machineLearningMock.ocr.mockResolvedValue({ box: [], boxScore: [], text: [], textScore: [] });
@@ -221,6 +244,7 @@ describe(OcrService.name, () => {
     const { user } = await ctx.newUser();
     const { asset } = await ctx.newAsset({ ownerId: user.id });
     await ctx.newAssetFile({ assetId: asset.id, type: AssetFileType.Preview, path: 'preview.jpg' });
+    ctx.getMock(EventRepository).emit.mockResolvedValue();
 
     const machineLearningMock = ctx.getMock(MachineLearningRepository);
     machineLearningMock.ocr.mockResolvedValue({

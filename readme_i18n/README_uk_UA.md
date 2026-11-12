@@ -9,7 +9,9 @@
 </p>
 
 <p align="center">
-<img src="/design/immich-logo-stacked-light.svg" width="300" title="Login With Custom URL">
+  <a href="#">
+    <img src="/design/immich-logo-stacked-light.svg" width="300" alt="Immich Logo">
+  </a>
 </p>
 <h3 align="center">Високопродуктивне рішення для управління фото та відео на власному хостингу</h3>
 <br/>
@@ -32,19 +34,19 @@
   <a href="README_zh_CN.md">简体中文</a>
   <a href="README_zh_TW.md">正體中文</a>
   <a href="README_ru_RU.md">Русский</a>
+  <a href="README_bg_BG.md">Български</a>
+  <a href="README_pl_PL.md">Polski</a>
   <a href="README_pt_BR.md">Português Brasileiro</a>
   <a href="README_sv_SE.md">Svenska</a>
   <a href="README_ar_JO.md">العربية</a>
   <a href="README_vi_VN.md">Tiếng Việt</a>
   <a href="README_th_TH.md">ภาษาไทย</a>
+  <a href="README_ml_IN.md">മലയാളം</a>
 </p>
 
-## Застереження
-
-- ⚠️ Цей проєкт перебуває **в дуже активній** розробці.
-- ⚠️ Очікуйте безліч помилок і глобальних змін.
-- ⚠️ **Не використовуйте цей застосунок як єдине сховище своїх фото та відео.**
-- ⚠️ Завжди дотримуйтесь [плану резервного копіювання 3-2-1](https://www.backblaze.com/blog/the-3-2-1-backup-strategy/) для ваших дорогоцінних фотографій та відео!
+> [!WARNING]
+> ⚠️ Завжди дотримуйтесь [плану резервного копіювання 3-2-1](https://www.backblaze.com/blog/the-3-2-1-backup-strategy/) для ваших дорогоцінних фотографій та відео!
+>
 
 > [!NOTE]
 > Основну документацію, зокрема посібники зі встановлення, можна знайти за адресою https://immich.app/.
@@ -116,16 +118,6 @@
 ## Активність репозиторію
 
 ![Діяльність](https://repobeats.axiom.co/api/embed/9e86d9dc3ddd137161f2f6d2e758d7863b1789cb.svg "Зображення аналітики Repobeats")
-
-## Історія зірок
-
-<a href="https://star-history.com/#immich-app/immich&Date">
- <picture>
-   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=immich-app/immich&type=Date&theme=dark" />
-   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=immich-app/immich&type=Date" />
-   <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=immich-app/immich&type=Date" width="100%" />
- </picture>
-</a>
 
 ## Автори
 

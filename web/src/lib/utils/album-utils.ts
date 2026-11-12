@@ -1,5 +1,6 @@
-import { goto } from '$app/navigation';
-import { AppRoute } from '$lib/constants';
+import { createAlbumMutation } from '#lib/queries/album.query.ts';
+import { executeMutation } from '#lib/queries/client.ts';
+import { Route } from '#lib/route.ts';
 import {
   AlbumFilter,
   AlbumGroupBy,
@@ -8,47 +9,27 @@ import {
   albumViewSettings,
   locale,
   type AlbumViewSettings,
-} from '$lib/stores/preferences.store';
-import { handleError } from '$lib/utils/handle-error';
+} from '#lib/stores/preferences.store.ts';
 import type { AlbumResponseDto } from '@immich/sdk';
-import * as sdk from '@immich/sdk';
-import { modalManager } from '@immich/ui';
 import { orderBy } from 'lodash-es';
-import { t } from 'svelte-i18n';
 import { get } from 'svelte/store';
+import { goto } from '$app/navigation';
 
 /**
- * -------------------------
- * Albums General Management
- * -------------------------
- */
-export const createAlbum = async (name?: string, assetIds?: string[]) => {
-  try {
-    const newAlbum: AlbumResponseDto = await sdk.createAlbum({
-      createAlbumDto: {
-        albumName: name ?? '',
-        assetIds,
-      },
-    });
-    return newAlbum;
-  } catch (error) {
-    const $t = get(t);
-    handleError(error, $t('errors.failed_to_create_album'));
-  }
-};
-
-export const createAlbumAndRedirect = async (name?: string, assetIds?: string[]) => {
-  const newAlbum = await createAlbum(name, assetIds);
-  if (newAlbum) {
-    await goto(`${AppRoute.ALBUMS}/${newAlbum.id}`);
-  }
-};
+-------------------------
+Albums General Management
+-------------------------
+*/
+export const createAlbumAndRedirect = (name?: string, assetIds?: string[]) =>
+  executeMutation(createAlbumMutation, [{ createAlbumDto: { albumName: name ?? '', assetIds } }], {
+    onSuccess: (album) => void goto(Route.viewAlbum(album)),
+  });
 
 /**
- * -------------
- * Album Sorting
- * -------------
- */
+-------------
+Album Sorting
+-------------
+*/
 export interface AlbumSortOptionMetadata {
   id: AlbumSortBy;
   defaultOrder: SortOrder;
@@ -101,10 +82,10 @@ export const findFilterOption = (filter: string) => {
 };
 
 /**
- * --------------
- * Album Grouping
- * --------------
- */
+--------------
+Album Grouping
+--------------
+*/
 export interface AlbumGroup {
   id: string;
   name: string;
@@ -155,10 +136,10 @@ export const getSelectedAlbumGroupOption = (settings: AlbumViewSettings) => {
 };
 
 /**
- * ----------------------------
- * Album Groups Collapse/Expand
- * ----------------------------
- */
+----------------------------
+Album Groups Collapse/Expand
+----------------------------
+*/
 const getCollapsedAlbumGroups = (settings: AlbumViewSettings) => {
   settings.collapsedGroups ??= {};
   const { collapsedGroups, groupBy } = settings;
@@ -201,19 +182,6 @@ export const collapseAllAlbumGroups = (groupIds: string[]) => {
 
 export const expandAllAlbumGroups = () => {
   collapseAllAlbumGroups([]);
-};
-
-export const confirmAlbumDelete = async (album: AlbumResponseDto) => {
-  const $t = get(t);
-  const confirmation =
-    album.albumName.length > 0
-      ? $t('album_delete_confirmation', { values: { album: album.albumName } })
-      : $t('unnamed_album_delete_confirmation');
-
-  const description = $t('album_delete_confirmation_description');
-  const prompt = `${confirmation} ${description}`;
-
-  return modalManager.showDialog({ prompt });
 };
 
 interface AlbumSortOption {

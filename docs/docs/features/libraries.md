@@ -1,5 +1,7 @@
 # External Libraries
 
+import ComposeBuilder from '/docs/partials/_compose-builder.mdx';
+
 :::info
 Currently an external library can only belong to a single user which is selected when the library is initially created.
 :::
@@ -41,7 +43,7 @@ To validate that Immich can reach your external library, start a shell inside th
 
 ### Exclusion Patterns
 
-By default, all files in the import paths will be added to the library. If there are files that should not be added, exclusion patterns can be used to exclude them. Exclusion patterns are glob patterns are matched against the full file path. If a file matches an exclusion pattern, it will not be added to the library. Exclusion patterns can be added in the Scan Settings page for each library.
+By default, all files in the import paths will be added to the library. If there are files that should not be added, exclusion patterns can be used to exclude them. Exclusion patterns are glob patterns matched against the full file path. If a file matches an exclusion pattern, it will not be added to the library. If it has already been imported, it will be offlined on the next library scan. Exclusion patterns can be added in the Scan Settings page for each library.
 
 Some basic examples:
 
@@ -49,13 +51,18 @@ Some basic examples:
 - `**/hidden.jpg` will exclude all files named `hidden.jpg`
 - `**/Raw/**` will exclude all files in any directory named `Raw`
 - `**/*.{tif,jpg}` will exclude all files with the extension `.tif` or `.jpg`
+- `**/*.{arw,dng}` will exclude all files with the extension `.arw` or `.dng`
+
+Exclusion patterns are case-insensitive for both new files and already imported assets. For example, `**/*.{arw,dng}` also excludes files with uppercase or mixed-case extensions such as `.ARW` and `.DnG`.
+
+Note that `*` is a wildcard matching zero or more characters (i.e., within a filename or single directory name). `**` matches zero or more subdirectories, recursively. It also includes any/all files within a subdirectory, i.e., when used at the end of a pattern. For example, `**/exclude_me/**` will exclude all files in any directory named `exclude_me`, as well as all files in any subdirectories of `exclude_me`, recursively.
 
 Special characters such as @ should be escaped, for instance:
 
 - `**/\@eaDir/**` will exclude all files in any directory named `@eaDir`
 
 :::info
-Internally, Immich uses the [glob](https://www.npmjs.com/package/glob) package to process exclusion patterns, and sometimes those patterns are translated into [Postgres LIKE patterns](https://www.postgresql.org/docs/current/functions-matching.html). The intention is to support basic folder exclusions but we recommend against advanced usage since those can't reliably be translated to the Postgres syntax. Please refer to the [glob documentation](https://github.com/isaacs/node-glob#glob-primer) for a basic overview on glob patterns.
+For more information on the glob syntax supported by exclusion patterns, refer to the [Picomatch documentation](https://github.com/micromatch/picomatch#globbing-features).
 :::
 
 ### Automatic watching (EXPERIMENTAL)
@@ -80,6 +87,10 @@ There is an automatic scan job that is scheduled to run once a day. Its schedule
 
 This job also cleans up any libraries stuck in deletion. It is possible to trigger the cleanup by clicking "Scan all libraries" in the library management page.
 
+### Deleting a Library
+
+When deleting an external library, all assets inside are immediately deleted along with the library. Note that while a library can take a long time to fully delete in the background, it is immediately removed from the library list. If the deletion process is interrupted (for example, due to server restart), it will be cleaned up in the next nightly cron job. The cleanup process can also be manually initiated by clicking the "Scan All Libraries" button in the library list.
+
 ## Usage
 
 Let's show a concrete example where we add an existing gallery to Immich. Here, we have the following folders we want to add:
@@ -91,6 +102,8 @@ Let's show a concrete example where we add an existing gallery to Immich. Here, 
 First, we need to plan how we want to organize the libraries. The christmas trip photos should belong to its own library since we want to exclude the raw files. The videos and old photos can be in the same library since we want to import all files. We could also add all three folders to the same library if there are no files matching the Raw exclusion pattern in the other folders.
 
 ### Mount Docker Volumes
+
+<ComposeBuilder query="storage.externalLibraries.0.path=&storage.externalLibraries.0.readOnly=true" />
 
 The `immich-server` container will need access to the gallery. Modify your docker compose file as follows
 
@@ -118,46 +131,35 @@ _Remember to run `docker compose up -d` to register the changes. Make sure you c
 
 These actions must be performed by the Immich administrator.
 
-- Click on your avatar in the upper right corner
-- Click on Administration -> External Libraries
-- Click on Create an external library…
-- Select which user owns the library, this can not be changed later
-- Enter `/mnt/media/christmas-trip` then click Add
-- Click on Save
-- Click the drop-down menu on the newly created library
-- Click on Scan
-- Click the drop-down menu on the newly created library
-- Click on Rename Library and rename it to "Christmas Trip"
+- Click on your avatar in the upper right corner.
+- Click on `Administration -> External Libraries`.
+- Click on `Create Library`.
+- Select which user owns the library, this **can not** be changed later
+- You are now entering the library management page.
+- Click on `Add` in the `Folders` section.
+- Enter `/mnt/media/christmas-trip` then click Add.
+- Click on `Edit` Library and rename it to "Christmas Trip".
 
 NOTE: We have to use the `/mnt/media/christmas-trip` path and not the `/mnt/nas/christmas-trip` path since all paths have to be what the Docker containers see.
 
 Next, we'll add an exclusion pattern to filter out raw files.
 
-- Click the drop-down menu on the newly-created Christmas library
-- Click on Manage
-- Click on Scan Settings
-- Click on Add Exclusion Pattern
-- Enter `**/Raw/**` and click save.
-- Click save
-- Click the drop-down menu on the newly created library
-- Click on Scan
+- Click on `Add` in the `Exclusion Patterns` section.
+- Enter `**/Raw/**` and click Add.
+- Click on `Scan`
 
 The christmas trip library will now be scanned in the background. In the meantime, let's add the videos and old photos to another library.
 
-- Click on Create External Library.
-
-:::note
-If you get an error here, please rename the other external library to something else. This is a bug that will be fixed in a future release.
-:::
-
-- Click the drop-down menu on the newly created library
-- Click Edit Import Paths
-- Click on Add Path
+- Go back to `Administration -> External Libraries`.
+- Click on `Create Library`.
+- Select which user owns the library,
+- You are now entering the library management page.
+- Click on `Add` in the `Folders` section.
 - Enter `/mnt/media/old-pics` then click Add
-- Click on Add Path
+- Click on `Add` in the `Folders` section.
 - Enter `/mnt/media/videos` then click Add
-- Click Save
-- Click on Scan
+- Click on `Scan`
+- Click on `Edit` Library and rename it to "Old videos and photos".
 
 Within seconds, the assets from the old-pics and videos folders should show up in the main timeline.
 

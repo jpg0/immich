@@ -1,24 +1,25 @@
-import { UpdatedAtTrigger, UpdateIdColumn } from 'src/decorators';
-import { AssetStatus, AssetType, AssetVisibility } from 'src/enum';
-import { asset_visibility_enum, assets_status_enum } from 'src/schema/enums';
-import { asset_delete_audit } from 'src/schema/functions';
-import { LibraryTable } from 'src/schema/tables/library.table';
-import { StackTable } from 'src/schema/tables/stack.table';
-import { UserTable } from 'src/schema/tables/user.table';
 import {
   AfterDeleteTrigger,
+  AfterUpdateTrigger,
   Column,
   CreateDateColumn,
   DeleteDateColumn,
   ForeignKeyColumn,
-  Generated,
   Index,
   PrimaryGeneratedColumn,
   Table,
-  Timestamp,
   UpdateDateColumn,
-} from 'src/sql-tools';
-import { ASSET_CHECKSUM_CONSTRAINT } from 'src/utils/database';
+  type Generated,
+  type Timestamp,
+} from '@immich/sql-tools';
+import { UpdateIdColumn, UpdatedAtTrigger } from 'src/decorators.js';
+import { AssetStatus, AssetType, AssetVisibility, ChecksumAlgorithm } from 'src/enum.js';
+import { asset_checksum_algorithm_enum, asset_visibility_enum, assets_status_enum } from 'src/schema/enums.js';
+import { asset_delete_audit, asset_face_update_asset_state } from 'src/schema/functions.js';
+import { LibraryTable } from 'src/schema/tables/library.table.js';
+import { StackTable } from 'src/schema/tables/stack.table.js';
+import { UserTable } from 'src/schema/tables/user.table.js';
+import { ASSET_CHECKSUM_CONSTRAINT } from 'src/utils/database.js';
 
 @Table('asset')
 @UpdatedAtTrigger('asset_updatedAt')
@@ -28,46 +29,51 @@ import { ASSET_CHECKSUM_CONSTRAINT } from 'src/utils/database';
   referencingOldTableAs: 'old',
   when: 'pg_trigger_depth() = 0',
 })
+@AfterUpdateTrigger({
+  scope: 'row',
+  function: asset_face_update_asset_state,
+  when: '(OLD."ownerId", OLD."visibility", OLD."deletedAt") IS DISTINCT FROM (NEW."ownerId", NEW."visibility", NEW."deletedAt")',
+})
 // Checksums must be unique per user and library
 @Index({
   name: ASSET_CHECKSUM_CONSTRAINT,
   columns: ['ownerId', 'checksum'],
   unique: true,
-  where: '("libraryId" IS NULL)',
+  where: '"libraryId" IS NULL',
 })
 @Index({
   columns: ['ownerId', 'libraryId', 'checksum'],
   unique: true,
-  where: '("libraryId" IS NOT NULL)',
+  where: '"libraryId" IS NOT NULL',
 })
 @Index({
   name: 'asset_localDateTime_idx',
-  expression: `(("localDateTime" at time zone 'UTC')::date)`,
+  expression: `("localDateTime" at time zone 'UTC')::date`,
 })
 @Index({
   name: 'asset_localDateTime_month_idx',
-  expression: `(date_trunc('MONTH'::text, ("localDateTime" AT TIME ZONE 'UTC'::text)) AT TIME ZONE 'UTC'::text)`,
+  expression: `date_trunc('MONTH'::text, ("localDateTime" AT TIME ZONE 'UTC'::text)) AT TIME ZONE 'UTC'::text`,
 })
 @Index({ columns: ['originalPath', 'libraryId'] })
 @Index({ columns: ['id', 'stackId'] })
+@Index({ columns: ['ownerId', 'updateId'] })
 @Index({
   name: 'asset_originalFilename_trigram_idx',
   using: 'gin',
   expression: 'f_unaccent("originalFileName") gin_trgm_ops',
+})
+@Index({
+  name: 'asset_id_timeline_notDeleted_idx',
+  columns: ['id'],
+  where: `visibility = 'timeline' AND "deletedAt" IS NULL`,
 })
 // For all assets, each originalpath must be unique per user and library
 export class AssetTable {
   @PrimaryGeneratedColumn()
   id!: Generated<string>;
 
-  @Column()
-  deviceAssetId!: string;
-
   @ForeignKeyColumn(() => UserTable, { onDelete: 'CASCADE', onUpdate: 'CASCADE', nullable: false })
   ownerId!: string;
-
-  @Column()
-  deviceId!: string;
 
   @Column()
   type!: AssetType;
@@ -84,14 +90,14 @@ export class AssetTable {
   @Column({ type: 'boolean', default: false })
   isFavorite!: Generated<boolean>;
 
-  @Column({ type: 'character varying', nullable: true })
-  duration!: string | null;
-
-  @Column({ type: 'character varying', nullable: true, default: '' })
-  encodedVideoPath!: string | null;
+  @Column({ type: 'integer', nullable: true })
+  duration!: number | null;
 
   @Column({ type: 'bytea', index: true })
   checksum!: Buffer; // sha1 checksum
+
+  @Column({ enum: asset_checksum_algorithm_enum })
+  checksumAlgorithm!: ChecksumAlgorithm;
 
   @ForeignKeyColumn(() => AssetTable, { nullable: true, onUpdate: 'CASCADE', onDelete: 'SET NULL' })
   livePhotoVideoId!: string | null;
@@ -99,14 +105,11 @@ export class AssetTable {
   @UpdateDateColumn()
   updatedAt!: Generated<Timestamp>;
 
-  @CreateDateColumn()
+  @CreateDateColumn({ index: true })
   createdAt!: Generated<Timestamp>;
 
   @Column({ index: true })
   originalFileName!: string;
-
-  @Column({ nullable: true })
-  sidecarPath!: string | null;
 
   @Column({ type: 'bytea', nullable: true })
   thumbhash!: Buffer | null;
@@ -140,4 +143,13 @@ export class AssetTable {
 
   @Column({ enum: asset_visibility_enum, default: AssetVisibility.Timeline })
   visibility!: Generated<AssetVisibility>;
+
+  @Column({ type: 'integer', nullable: true })
+  width!: number | null;
+
+  @Column({ type: 'integer', nullable: true })
+  height!: number | null;
+
+  @Column({ type: 'boolean', default: false })
+  isEdited!: Generated<boolean>;
 }

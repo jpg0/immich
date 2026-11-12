@@ -1,6 +1,17 @@
 import Photos
 
 extension PHAsset {
+  var platformPlaybackStyle: PlatformAssetPlaybackStyle {
+    switch playbackStyle {
+    case .image: return .image
+    case .imageAnimated: return .imageAnimated
+    case .livePhoto: return .livePhoto
+    case .video: return .video
+    case .videoLooping: return .videoLooping
+    @unknown default: return .unknown
+    }
+  }
+
   func toPlatformAsset() -> PlatformAsset {
     return PlatformAsset(
       id: localIdentifier,
@@ -10,9 +21,13 @@ extension PHAsset {
       updatedAt: modificationDate.map { Int64($0.timeIntervalSince1970) },
       width: Int64(pixelWidth),
       height: Int64(pixelHeight),
-      durationInSeconds: Int64(duration),
+      durationMs: Int64(duration * 1000),
       orientation: 0,
-      isFavorite: isFavorite
+      isFavorite: isFavorite,
+      adjustmentTime: adjustmentTimestamp,
+      latitude: location?.coordinate.latitude,
+      longitude: location?.coordinate.longitude,
+      playbackStyle: platformPlaybackStyle
     )
   }
 
@@ -22,6 +37,13 @@ extension PHAsset {
 
   var filename: String? {
     return value(forKey: "filename") as? String
+  }
+
+  var adjustmentTimestamp: Int64? {
+    if let date = value(forKey: "adjustmentTimestamp") as? Date {
+      return Int64(date.timeIntervalSince1970)
+    }
+    return nil
   }
 
   // This method is expected to be slow as it goes through the asset resources to fetch the originalFilename

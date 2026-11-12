@@ -1,12 +1,11 @@
 import { Injectable } from '@nestjs/common';
-import { SystemConfig } from 'src/config';
-import { JOBS_ASSET_PAGINATION_SIZE } from 'src/constants';
-import { OnEvent, OnJob } from 'src/decorators';
-import { AssetVisibility, DatabaseLock, ImmichWorker, JobName, JobStatus, QueueName } from 'src/enum';
-import { ArgOf } from 'src/repositories/event.repository';
-import { BaseService } from 'src/services/base.service';
-import { JobItem, JobOf } from 'src/types';
-import { getCLIPModelInfo, isSmartSearchEnabled } from 'src/utils/misc';
+import { OnEvent, OnJob } from 'src/decorators.js';
+import { SystemConfig } from 'src/dtos/config.dto.js';
+import { AssetVisibility, DatabaseLock, ImmichWorker, JobName, JobStatus, QueueName } from 'src/enum.js';
+import type { ArgOf } from 'src/repositories/event.repository.js';
+import { BaseService } from 'src/services/base.service.js';
+import type { JobOf } from 'src/types.js';
+import { batched, getCLIPModelInfo, isSmartSearchEnabled } from 'src/utils/misc.js';
 
 @Injectable()
 export class SmartInfoService extends BaseService {
@@ -43,12 +42,12 @@ export class SmartInfoService extends BaseService {
 
       const modelChange =
         oldConfig && oldConfig.machineLearning.clip.modelName !== newConfig.machineLearning.clip.modelName;
-      const dimSizeChange = dbDimSize !== dimSize;
-      if (!modelChange && !dimSizeChange) {
+      const isDimSizeChange = dbDimSize !== dimSize;
+      if (!modelChange && !isDimSizeChange) {
         return;
       }
 
-      if (dimSizeChange) {
+      if (isDimSizeChange) {
         this.logger.log(
           `Dimension size of model ${newConfig.machineLearning.clip.modelName} is ${dimSize}, but database expects ${dbDimSize}.`,
         );
@@ -77,17 +76,9 @@ export class SmartInfoService extends BaseService {
       await this.databaseRepository.setDimensionSize(dimSize);
     }
 
-    let queue: JobItem[] = [];
-    const assets = this.assetJobRepository.streamForEncodeClip(force);
-    for await (const asset of assets) {
-      queue.push({ name: JobName.SmartSearch, data: { id: asset.id } });
-      if (queue.length >= JOBS_ASSET_PAGINATION_SIZE) {
-        await this.jobRepository.queueAll(queue);
-        queue = [];
-      }
+    for await (const assets of batched(this.assetJobRepository.streamForEncodeClip(force))) {
+      await this.jobRepository.queueAll(assets.map((asset) => ({ name: JobName.SmartSearch, data: { id: asset.id } })));
     }
-
-    await this.jobRepository.queueAll(queue);
 
     return JobStatus.Success;
   }
@@ -100,7 +91,8 @@ export class SmartInfoService extends BaseService {
     }
 
     const asset = await this.assetJobRepository.getForClipEncoding(id);
-    if (!asset || asset.files.length !== 1) {
+    const previewFile = asset?.files.find((file) => file.isEdited) ?? asset?.files[0];
+    if (!asset || !previewFile) {
       return JobStatus.Failed;
     }
 
@@ -108,7 +100,7 @@ export class SmartInfoService extends BaseService {
       return JobStatus.Skipped;
     }
 
-    const embedding = await this.machineLearningRepository.encodeImage(asset.files[0].path, machineLearning.clip);
+    const embedding = await this.machineLearningRepository.encodeImage(previewFile.path, machineLearning.clip);
 
     if (this.databaseRepository.isBusy(DatabaseLock.CLIPDimSize)) {
       this.logger.verbose(`Waiting for CLIP dimension size to be updated`);
@@ -117,7 +109,7 @@ export class SmartInfoService extends BaseService {
 
     const newConfig = await this.getConfig({ withCache: true });
     if (machineLearning.clip.modelName !== newConfig.machineLearning.clip.modelName) {
-      // Skip the job if the the model has changed since the embedding was generated.
+      // Skip the job if the model has changed since the embedding was generated.
       return JobStatus.Skipped;
     }
 

@@ -1,9 +1,7 @@
-import { StorageCore } from 'src/cores/storage.core';
 import { vitest } from 'vitest';
+import { StorageCore } from 'src/cores/storage.core.js';
 
 vitest.mock('src/constants', () => ({
-  ADDED_IN_PREFIX: 'This property was added in ',
-  DEPRECATED_IN_PREFIX: 'This property was deprecated in ',
   IWorker: 'IWorker',
 }));
 

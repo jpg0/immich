@@ -1,39 +1,36 @@
 <script lang="ts">
-  import { shortcut } from '$lib/actions/shortcut';
-
-  import { getAssetControlContext } from '$lib/components/timeline/AssetSelectControlBar.svelte';
-  import { authManager } from '$lib/managers/auth-manager.svelte';
-  import { downloadArchive, downloadFile } from '$lib/utils/asset-utils';
+  import MenuOption from '#lib/components/shared-components/context-menu/MenuOption.svelte';
+  import { assetMultiSelectManager } from '#lib/managers/asset-multi-select-manager.svelte.ts';
+  import { authManager } from '#lib/managers/auth-manager.svelte.ts';
+  import { handleDownloadAsset } from '#lib/services/asset.service.ts';
+  import { downloadArchive } from '#lib/utils/asset-utils.ts';
   import { getAssetInfo } from '@immich/sdk';
-  import { IconButton } from '@immich/ui';
+  import { IconButton, shortcut } from '@immich/ui';
   import { mdiDownload } from '@mdi/js';
   import { t } from 'svelte-i18n';
-  import MenuOption from '../../shared-components/context-menu/menu-option.svelte';
 
   interface Props {
     filename?: string;
     menuItem?: boolean;
   }
 
-  let { filename = 'immich.zip', menuItem = false }: Props = $props();
-
-  const { getAssets, clearSelect } = getAssetControlContext();
+  let { filename = 'immich', menuItem = false }: Props = $props();
 
   const handleDownloadFiles = async () => {
-    const assets = [...getAssets()];
+    const assets = assetMultiSelectManager.assets;
     if (assets.length === 1) {
-      clearSelect();
+      assetMultiSelectManager.clear();
       let asset = await getAssetInfo({ ...authManager.params, id: assets[0].id });
-      await downloadFile(asset);
+      await handleDownloadAsset(asset, { edited: true });
       return;
     }
 
-    clearSelect();
+    assetMultiSelectManager.clear();
     await downloadArchive(filename, { assetIds: assets.map((asset) => asset.id) });
   };
 </script>
 
-<svelte:document use:shortcut={{ shortcut: { key: 'd', shift: true }, onShortcut: handleDownloadFiles }} />
+<svelte:window {@attach shortcut({ shortcut: { key: 'd', shift: true }, onShortcut: handleDownloadFiles })} />
 
 {#if menuItem}
   <MenuOption text={$t('download')} icon={mdiDownload} onClick={handleDownloadFiles} />

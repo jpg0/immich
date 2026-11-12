@@ -1,20 +1,16 @@
-import { mobileDevice } from '$lib/stores/mobile-device.svelte';
+import { mediaQueryManager } from '#lib/stores/media-query-manager.svelte.ts';
 
 class SidebarStore {
-  isOpen = $derived.by(() => mobileDevice.isFullSidebar);
+  isOpen = $derived.by(() => mediaQueryManager.isFullSidebar);
 
-  /**
-   * Reset the sidebar visibility to the default, based on the current screen width.
-   */
+  /** Reset the sidebar visibility to the default, based on the current screen width. */
   reset() {
-    this.isOpen = mobileDevice.isFullSidebar;
+    this.isOpen = mediaQueryManager.isFullSidebar;
   }
 
-  /**
-   * Toggles the sidebar visibility, if available at the current screen width.
-   */
+  /** Toggles the sidebar visibility, if available at the current screen width. */
   toggle() {
-    this.isOpen = mobileDevice.isFullSidebar ? true : !this.isOpen;
+    this.isOpen = mediaQueryManager.isFullSidebar || !this.isOpen;
   }
 }
 

@@ -1,12 +1,12 @@
 import { Injectable } from '@nestjs/common';
-import { ExpressionBuilder, Insertable, Kysely, Updateable } from 'kysely';
+import type { ExpressionBuilder, Insertable, Kysely, Updateable } from 'kysely';
 import { jsonArrayFrom } from 'kysely/helpers/postgres';
 import { InjectKysely } from 'nestjs-kysely';
-import { columns } from 'src/database';
-import { DummyValue, GenerateSql } from 'src/decorators';
-import { DB } from 'src/schema';
-import { StackTable } from 'src/schema/tables/stack.table';
-import { asUuid, withDefaultVisibility } from 'src/utils/database';
+import { columns } from 'src/database.js';
+import { DummyValue, GenerateSql } from 'src/decorators.js';
+import { DB } from 'src/schema/index.js';
+import { StackTable } from 'src/schema/tables/stack.table.js';
+import { asUuid, withDefaultVisibility } from 'src/utils/database.js';
 
 export interface StackSearch {
   ownerId: string;
@@ -33,15 +33,16 @@ const withAssets = (eb: ExpressionBuilder<DB, 'stack'>, withTags = false) => {
             eb
               .selectFrom('tag')
               .select(columns.tag)
-              .innerJoin('tag_asset', 'tag.id', 'tag_asset.tagsId')
-              .whereRef('tag_asset.assetsId', '=', 'asset.id'),
+              .innerJoin('tag_asset', 'tag.id', 'tag_asset.tagId')
+              .whereRef('tag_asset.assetId', '=', 'asset.id'),
           ).as('tags'),
         ),
       )
       .select((eb) => eb.fn.toJson('exifInfo').as('exifInfo'))
       .where('asset.deletedAt', 'is', null)
       .whereRef('asset.stackId', '=', 'stack.id')
-      .$call(withDefaultVisibility),
+      .$call(withDefaultVisibility)
+      .orderBy('asset.fileCreatedAt', 'asc'),
   ).as('assets');
 };
 

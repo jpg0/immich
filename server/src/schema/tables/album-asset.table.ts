@@ -1,16 +1,16 @@
-import { UpdatedAtTrigger, UpdateIdColumn } from 'src/decorators';
-import { album_asset_delete_audit } from 'src/schema/functions';
-import { AlbumTable } from 'src/schema/tables/album.table';
-import { AssetTable } from 'src/schema/tables/asset.table';
 import {
   AfterDeleteTrigger,
   CreateDateColumn,
   ForeignKeyColumn,
-  Generated,
   Table,
   Timestamp,
   UpdateDateColumn,
-} from 'src/sql-tools';
+  type Generated,
+} from '@immich/sql-tools';
+import { UpdateIdColumn, UpdatedAtTrigger } from 'src/decorators.js';
+import { album_asset_delete_audit } from 'src/schema/functions.js';
+import { AlbumTable } from 'src/schema/tables/album.table.js';
+import { AssetTable } from 'src/schema/tables/asset.table.js';
 
 @Table({ name: 'album_asset' })
 @UpdatedAtTrigger('album_asset_updatedAt')
@@ -22,10 +22,10 @@ import {
 })
 export class AlbumAssetTable {
   @ForeignKeyColumn(() => AlbumTable, { onDelete: 'CASCADE', onUpdate: 'CASCADE', nullable: false, primary: true })
-  albumsId!: string;
+  albumId!: string;
 
   @ForeignKeyColumn(() => AssetTable, { onDelete: 'CASCADE', onUpdate: 'CASCADE', nullable: false, primary: true })
-  assetsId!: string;
+  assetId!: string;
 
   @CreateDateColumn()
   createdAt!: Generated<Timestamp>;

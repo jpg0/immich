@@ -1,8 +1,9 @@
-import { mapAsset } from 'src/dtos/asset-response.dto';
-import { ViewService } from 'src/services/view.service';
-import { assetStub } from 'test/fixtures/asset.stub';
-import { authStub } from 'test/fixtures/auth.stub';
-import { newTestService, ServiceMocks } from 'test/utils';
+import { mapAsset } from 'src/dtos/asset-response.dto.js';
+import { ViewService } from 'src/services/view.service.js';
+import { AssetFactory } from 'test/factories/asset.factory.js';
+import { authStub } from 'test/fixtures/auth.stub.js';
+import { getForAsset } from 'test/mappers.js';
+import { ServiceMocks, newTestService } from 'test/utils.js';
 
 describe(ViewService.name, () => {
   let sut: ViewService;
@@ -32,12 +33,12 @@ describe(ViewService.name, () => {
     it('should return assets by original path', async () => {
       const path = '/asset';
 
-      const asset1 = { ...assetStub.image, originalPath: '/asset/path1' };
-      const asset2 = { ...assetStub.image, originalPath: '/asset/path2' };
+      const asset1 = AssetFactory.create({ originalPath: '/asset/path1' });
+      const asset2 = AssetFactory.create({ originalPath: '/asset/path2' });
 
       const mockAssets = [asset1, asset2];
 
-      const mockAssetReponseDto = mockAssets.map((a) => mapAsset(a, { auth: authStub.admin }));
+      const mockAssetReponseDto = mockAssets.map((asset) => mapAsset(getForAsset(asset), { auth: authStub.admin }));
 
       mocks.view.getAssetsByOriginalPath.mockResolvedValue(mockAssets as any);
 

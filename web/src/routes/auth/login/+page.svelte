@@ -1,15 +1,21 @@
 <script lang="ts">
-  import { goto } from '$app/navigation';
-  import AuthPageLayout from '$lib/components/layouts/AuthPageLayout.svelte';
-  import { AppRoute } from '$lib/constants';
-  import { eventManager } from '$lib/managers/event-manager.svelte';
-  import { featureFlags, serverConfig } from '$lib/stores/server-config.store';
-  import { oauth } from '$lib/utils';
-  import { getServerErrorMessage, handleError } from '$lib/utils/handle-error';
+  import AuthPageLayout from '#lib/components/layouts/AuthPageLayout.svelte';
+  import { eventManager } from '#lib/managers/event-manager.svelte.ts';
+  import { MutationCancelledError, createPreloadedQuery } from '#lib/queries/client.ts';
+  import { getPublicConfigQuery } from '#lib/queries/config-public.query.ts';
+  import { loginWithPasskeyMutation } from '#lib/queries/passkey.query.ts';
+  import { getServerConfigQuery } from '#lib/queries/server-info.query.ts';
+  import { Route } from '#lib/route.ts';
+  import { oauth } from '#lib/utils.ts';
+  import { getServerErrorMessage, handleError } from '#lib/utils/handle-error.ts';
   import { login, type LoginResponseDto } from '@immich/sdk';
   import { Alert, Button, Field, Input, PasswordInput, Stack } from '@immich/ui';
+  import { mdiShieldKeyOutline } from '@mdi/js';
+  import { browserSupportsWebAuthn } from '@simplewebauthn/browser';
+  import { createMutation } from '@tanstack/svelte-query';
   import { onMount } from 'svelte';
   import { t } from 'svelte-i18n';
+  import { goto } from '$app/navigation';
   import type { PageData } from './$types';
 
   interface Props {
@@ -25,23 +31,64 @@
   let loading = $state(false);
   let oauthLoading = $state(true);
 
-  const onSuccess = async (user: LoginResponseDto) => {
-    await goto(data.continueUrl, { invalidateAll: true });
-    eventManager.emit('auth.login', user);
+  const queries = {
+    publicConfig: createPreloadedQuery(getPublicConfigQuery),
+    serverConfig: createPreloadedQuery(getServerConfigQuery),
   };
 
-  const onFirstLogin = () => goto(AppRoute.AUTH_CHANGE_PASSWORD);
-  const onOnboarding = () => goto(AppRoute.AUTH_ONBOARDING);
+  const publicConfig = $derived(queries.publicConfig.data);
+  const serverConfig = $derived(queries.serverConfig.data);
+
+  const passkeySupported = browserSupportsWebAuthn();
+  const passkeyEnabled = $derived(publicConfig.passkey.enabled && passkeySupported);
+
+  const passkeyLogin = createMutation(() => ({ ...loginWithPasskeyMutation(), onSuccess: (user) => onLogin(user) }));
+  const passkeyLoading = $derived(passkeyLogin.isPending || passkeyLogin.isSuccess);
+  const passkeyError = $derived(
+    passkeyLogin.error && !(passkeyLogin.error instanceof MutationCancelledError)
+      ? getServerErrorMessage(passkeyLogin.error) || $t('errors.something_went_wrong')
+      : '',
+  );
+
+  const onSuccess = async (user: LoginResponseDto) => {
+    await goto(data.continueUrl, { refreshAll: true });
+    eventManager.emit('AuthLogin', user);
+  };
+
+  const onFirstLogin = () => goto(Route.changePassword());
+  const onOnboarding = () => goto(Route.onboarding());
+
+  const onLogin = async (user: LoginResponseDto) => {
+    if (user.isAdmin && !serverConfig.isOnboarded) {
+      await onOnboarding();
+      return;
+    }
+
+    // change the user password before we onboard them
+    if (!user.isAdmin && user.shouldChangePassword && publicConfig.passwordLogin.enabled) {
+      await onFirstLogin();
+      return;
+    }
+
+    // We want to onboard after the first login since their password will change
+    // and handleLogin will be called again (relogin). We then do onboarding on that next call.
+    if (!user.isOnboarded) {
+      await onOnboarding();
+      return;
+    }
+
+    await onSuccess(user);
+  };
 
   onMount(async () => {
-    if (!$featureFlags.oauth) {
+    if (!publicConfig.oauth.enabled) {
       oauthLoading = false;
       return;
     }
 
-    if (oauth.isCallback(globalThis.location)) {
+    if (oauth.isCallback(location)) {
       try {
-        const user = await oauth.login(globalThis.location);
+        const user = await oauth.login(location);
 
         if (!user.isOnboarded) {
           await onOnboarding();
@@ -60,11 +107,11 @@
 
     try {
       if (
-        ($featureFlags.oauthAutoLaunch && !oauth.isAutoLaunchDisabled(globalThis.location)) ||
-        oauth.isAutoLaunchEnabled(globalThis.location)
+        (publicConfig.oauth.autoLaunch && !oauth.isAutoLaunchDisabled(location)) ||
+        oauth.isAutoLaunchEnabled(location)
       ) {
-        await goto(`${AppRoute.AUTH_LOGIN}?autoLaunch=0`, { replaceState: true });
-        await oauth.authorize(globalThis.location);
+        await goto(Route.login({ autoLaunch: 0 }), { replaceState: true });
+        await oauth.authorize(location);
         return;
       }
     } catch (error) {
@@ -79,38 +126,17 @@
       errorMessage = '';
       loading = true;
       const user = await login({ loginCredentialDto: { email, password } });
-
-      if (user.isAdmin && !$serverConfig.isOnboarded) {
-        await onOnboarding();
-        return;
-      }
-
-      // change the user password before we onboard them
-      if (!user.isAdmin && user.shouldChangePassword) {
-        await onFirstLogin();
-        return;
-      }
-
-      // We want to onboard after the first login since their password will change
-      // and handleLogin will be called again (relogin). We then do onboarding on that next call.
-      if (!user.isOnboarded) {
-        await onOnboarding();
-        return;
-      }
-
-      await onSuccess(user);
-      return;
+      await onLogin(user);
     } catch (error) {
       errorMessage = getServerErrorMessage(error) || $t('errors.incorrect_email_or_password');
       loading = false;
-      return;
     }
   };
 
   const handleOAuthLogin = async () => {
     oauthLoading = true;
     oauthError = '';
-    const success = await oauth.authorize(globalThis.location);
+    const success = await oauth.authorize(location);
     if (!success) {
       oauthLoading = false;
       oauthError = $t('errors.unable_to_login_with_oauth');
@@ -123,64 +149,87 @@
   };
 </script>
 
-{#if $featureFlags.loaded}
-  <AuthPageLayout title={data.meta.title}>
-    <Stack gap={4}>
-      {#if $serverConfig.loginPageMessage}
-        <Alert color="primary" class="mb-6">
-          <!-- eslint-disable-next-line svelte/no-at-html-tags -->
-          {@html $serverConfig.loginPageMessage}
-        </Alert>
-      {/if}
+{#snippet divider()}
+  <div class="my-4 inline-flex w-full items-center justify-center">
+    <hr class="my-4 h-px w-3/4 border-0 bg-gray-200 dark:bg-gray-600" />
+    <span
+      class="absolute inset-s-1/2 -translate-x-1/2 bg-gray-50 px-3 font-medium text-gray-900 uppercase dark:bg-neutral-900 dark:text-white"
+    >
+      {$t('or')}
+    </span>
+  </div>
+{/snippet}
 
-      {#if !oauthLoading && $featureFlags.passwordLogin}
-        <form {onsubmit} class="flex flex-col gap-4">
-          {#if errorMessage}
-            <Alert color="danger" title={errorMessage} closable />
-          {/if}
+<AuthPageLayout title={data.meta.title}>
+  <Stack gap={4}>
+    {#if publicConfig.server.loginPageMessage}
+      <Alert color="primary" class="mb-6">
+        <!-- eslint-disable-next-line svelte/no-at-html-tags -->
+        {@html publicConfig.server.loginPageMessage}
+      </Alert>
+    {/if}
 
-          <Field label={$t('email')}>
-            <Input id="email" name="email" type="email" autocomplete="email" bind:value={email} />
-          </Field>
-
-          <Field label={$t('password')}>
-            <PasswordInput id="password" bind:value={password} autocomplete="current-password" />
-          </Field>
-
-          <Button type="submit" size="large" shape="round" fullWidth {loading} class="mt-6">{$t('to_login')}</Button>
-        </form>
-      {/if}
-
-      {#if $featureFlags.oauth}
-        {#if $featureFlags.passwordLogin}
-          <div class="inline-flex w-full items-center justify-center my-4">
-            <hr class="my-4 h-px w-3/4 border-0 bg-gray-200 dark:bg-gray-600" />
-            <span
-              class="absolute start-1/2 -translate-x-1/2 bg-gray-50 px-3 font-medium text-gray-900 dark:bg-neutral-900 dark:text-white uppercase"
-            >
-              {$t('or')}
-            </span>
-          </div>
+    {#if !oauthLoading && publicConfig.passwordLogin.enabled}
+      <form {onsubmit} class="flex flex-col gap-4">
+        {#if errorMessage}
+          <Alert color="danger" title={errorMessage} closable />
         {/if}
-        {#if oauthError}
-          <Alert color="danger" title={oauthError} closable />
-        {/if}
-        <Button
-          shape="round"
-          loading={loading || oauthLoading}
-          disabled={loading || oauthLoading}
-          size="large"
-          fullWidth
-          color={$featureFlags.passwordLogin ? 'secondary' : 'primary'}
-          onclick={handleOAuthLogin}
-        >
-          {$serverConfig.oauthButtonText}
-        </Button>
-      {/if}
 
-      {#if !$featureFlags.passwordLogin && !$featureFlags.oauth}
-        <Alert color="warning" title={$t('login_has_been_disabled')} />
+        <Field label={$t('email')} required="indicator">
+          <Input id="email" name="email" type="email" autocomplete="email" bind:value={email} />
+        </Field>
+
+        <Field label={$t('password')} required="indicator">
+          <PasswordInput id="password" bind:value={password} autocomplete="current-password" />
+        </Field>
+
+        <Button type="submit" size="large" shape="round" fullWidth {loading} class="mt-6">{$t('to_login')}</Button>
+      </form>
+    {/if}
+
+    {#if !oauthLoading && passkeyEnabled}
+      {#if publicConfig.passwordLogin.enabled}
+        {@render divider()}
       {/if}
-    </Stack>
-  </AuthPageLayout>
-{/if}
+      {#if passkeyError}
+        <Alert color="danger" title={passkeyError} closable />
+      {/if}
+      <Button
+        shape="round"
+        leadingIcon={mdiShieldKeyOutline}
+        loading={passkeyLoading}
+        disabled={loading || passkeyLoading}
+        size="large"
+        fullWidth
+        color={publicConfig.passwordLogin.enabled ? 'secondary' : 'primary'}
+        onclick={() => passkeyLogin.mutate()}
+      >
+        {$t('login_with_passkey')}
+      </Button>
+    {/if}
+
+    {#if publicConfig.oauth.enabled}
+      {#if publicConfig.passwordLogin.enabled || passkeyEnabled}
+        {@render divider()}
+      {/if}
+      {#if oauthError}
+        <Alert color="danger" title={oauthError} closable />
+      {/if}
+      <Button
+        shape="round"
+        loading={loading || oauthLoading}
+        disabled={loading || oauthLoading}
+        size="large"
+        fullWidth
+        color={publicConfig.passwordLogin.enabled ? 'secondary' : 'primary'}
+        onclick={handleOAuthLogin}
+      >
+        {publicConfig.oauth.buttonText}
+      </Button>
+    {/if}
+
+    {#if !publicConfig.passwordLogin.enabled && !passkeyEnabled && !publicConfig.oauth.enabled}
+      <Alert color="warning" title={$t('login_has_been_disabled')} />
+    {/if}
+  </Stack>
+</AuthPageLayout>

@@ -1,17 +1,23 @@
 import { Controller, HttpCode, HttpStatus, Post } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
-import { AuthDto } from 'src/dtos/auth.dto';
-import { Permission } from 'src/enum';
-import { Auth, Authenticated } from 'src/middleware/auth.guard';
-import { AuthAdminService } from 'src/services/auth-admin.service';
+import { Endpoint, HistoryBuilder } from 'src/decorators.js';
+import type { AuthDto } from 'src/dtos/auth.dto.js';
+import { ApiTag, Permission } from 'src/enum.js';
+import { Auth, Authenticated } from 'src/middleware/auth.guard.js';
+import { AuthAdminService } from 'src/services/auth-admin.service.js';
 
-@ApiTags('Auth (admin)')
+@ApiTags(ApiTag.AuthenticationAdmin)
 @Controller('admin/auth')
 export class AuthAdminController {
   constructor(private service: AuthAdminService) {}
   @Post('unlink-all')
   @Authenticated({ permission: Permission.AdminAuthUnlinkAll, admin: true })
   @HttpCode(HttpStatus.NO_CONTENT)
+  @Endpoint({
+    summary: 'Unlink all OAuth accounts',
+    description: 'Unlinks all OAuth accounts associated with user accounts in the system.',
+    history: new HistoryBuilder().added('v1').beta('v1').stable('v2'),
+  })
   unlinkAllOAuthAccountsAdmin(@Auth() auth: AuthDto): Promise<void> {
     return this.service.unlinkAll(auth);
   }

@@ -1,15 +1,29 @@
-import { langs } from '$lib/constants';
-import { eventManager } from '$lib/managers/event-manager.svelte';
-import { lang } from '$lib/stores/preferences.store';
+import { eventManager } from '#lib/managers/event-manager.svelte.ts';
+import { lang } from '#lib/stores/preferences.store.ts';
+import { convertBCP47, langs } from '#lib/utils/i18n.ts';
+import { setYuccaLanguage } from '@futo-org/backups-orchestrator-ui';
 
 class LanguageManager {
   constructor() {
-    eventManager.on('app.init', () => lang.subscribe((lang) => this.setLanguage(lang)));
+    eventManager.on({
+      AppInit: () => this.init(),
+    });
   }
 
+  initialized = $state(false);
   rtl = $state(false);
 
-  setLanguage(code: string) {
+  init() {
+    if (this.initialized) {
+      return;
+    }
+    this.initialized = true;
+    lang.subscribe((lang) => void this.setLanguage(lang));
+  }
+
+  async setLanguage(code: string) {
+    await setYuccaLanguage(convertBCP47(code));
+
     const item = langs.find((item) => item.code === code);
     if (!item) {
       return;
@@ -19,7 +33,7 @@ class LanguageManager {
 
     document.body.setAttribute('dir', item.rtl ? 'rtl' : 'ltr');
 
-    eventManager.emit('language.change', item);
+    eventManager.emit('LanguageChange', item);
   }
 }
 

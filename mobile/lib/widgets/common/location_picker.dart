@@ -1,11 +1,8 @@
 import 'package:auto_route/auto_route.dart';
-import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:immich_mobile/extensions/build_context_extensions.dart';
-import 'package:immich_mobile/extensions/string_extensions.dart';
-import 'package:immich_mobile/widgets/map/map_thumbnail.dart';
+import 'package:immich_mobile/generated/translations.g.dart';
 import 'package:immich_mobile/routing/router.dart';
 import 'package:maplibre_gl/maplibre_gl.dart';
 
@@ -17,25 +14,56 @@ Future<LatLng?> showLocationPicker({required BuildContext context, LatLng? initi
   );
 }
 
-enum _LocationPickerMode { map, manual }
-
 class _LocationPicker extends HookWidget {
   final LatLng? initialLatLng;
 
   const _LocationPicker({this.initialLatLng});
+
+  double? _parseLat(String value) {
+    final l = double.tryParse(value.replaceAll(',', '.'));
+    return l != null && l > -90 && l < 90 ? l : null;
+  }
+
+  double? _parseLong(String value) {
+    final l = double.tryParse(value.replaceAll(',', '.'));
+    return l != null && l > -180 && l < 180 ? l : null;
+  }
 
   @override
   Widget build(BuildContext context) {
     final latitude = useState(initialLatLng?.latitude ?? 0.0);
     final longitude = useState(initialLatLng?.longitude ?? 0.0);
     final latlng = LatLng(latitude.value, longitude.value);
-    final pickerMode = useState(_LocationPickerMode.map);
+    final isLatitudeValid = useState(true);
+    final isLongitudeValid = useState(true);
+    final latitiudeFocusNode = useFocusNode();
+    final longitudeFocusNode = useFocusNode();
+    final latitudeController = useTextEditingController(text: latitude.value.toStringAsFixed(4));
+    final longitudeController = useTextEditingController(text: longitude.value.toStringAsFixed(4));
 
     Future<void> onMapTap() async {
       final newLatLng = await context.pushRoute<LatLng?>(MapLocationPickerRoute(initialLatLng: latlng));
       if (newLatLng != null) {
         latitude.value = newLatLng.latitude;
         longitude.value = newLatLng.longitude;
+        latitudeController.text = newLatLng.latitude.toStringAsFixed(4);
+        longitudeController.text = newLatLng.longitude.toStringAsFixed(4);
+      }
+    }
+
+    void onLatitudeUpdated() {
+      longitudeFocusNode.requestFocus();
+    }
+
+    void onLongitudeEditingCompleted() {
+      longitudeFocusNode.unfocus();
+    }
+
+    Future<void> onUpdate() async {
+      isLatitudeValid.value = _parseLat(latitudeController.text) != null;
+      isLongitudeValid.value = _parseLong(longitudeController.text) != null;
+      if (isLatitudeValid.value && isLongitudeValid.value) {
+        await context.maybePop(LatLng(latitude.value, longitude.value));
       }
     }
 
@@ -43,70 +71,97 @@ class _LocationPicker extends HookWidget {
       contentPadding: const EdgeInsets.all(30),
       alignment: Alignment.center,
       content: SingleChildScrollView(
-        child: pickerMode.value == _LocationPickerMode.map
-            ? _MapPicker(
-                key: ValueKey(latlng),
-                latlng: latlng,
-                onModeSwitch: () => pickerMode.value = _LocationPickerMode.manual,
-                onMapTap: onMapTap,
-              )
-            : _ManualPicker(
-                latlng: latlng,
-                onModeSwitch: () => pickerMode.value = _LocationPickerMode.map,
-                onLatUpdated: (value) => latitude.value = value,
-                onLonUpdated: (value) => longitude.value = value,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(context.t.edit_location_dialog_title, style: context.textTheme.titleMedium),
+            Align(
+              alignment: Alignment.center,
+              child: TextButton.icon(
+                icon: Text(context.t.location_picker_choose_on_map),
+                label: const Icon(Icons.map_outlined, size: 16),
+                onPressed: onMapTap,
               ),
+            ),
+            const SizedBox(height: 12),
+            _ManualPickerInput(
+              controller: latitudeController,
+              decorationText: context.t.latitude,
+              hintText: context.t.location_picker_latitude_hint,
+              errorText: context.t.location_picker_latitude_error,
+              focusNode: latitiudeFocusNode,
+              coordinate: latitude,
+              isValid: isLatitudeValid,
+              parse: _parseLat,
+              onUpdated: onLatitudeUpdated,
+            ),
+            const SizedBox(height: 24),
+            _ManualPickerInput(
+              controller: longitudeController,
+              decorationText: context.t.longitude,
+              hintText: context.t.location_picker_longitude_hint,
+              errorText: context.t.location_picker_longitude_error,
+              focusNode: longitudeFocusNode,
+              coordinate: longitude,
+              isValid: isLongitudeValid,
+              parse: _parseLong,
+              onUpdated: onLongitudeEditingCompleted,
+            ),
+          ],
+        ),
       ),
       actions: [
         TextButton(
-          onPressed: () => context.pop(),
+          onPressed: () => ContextHelper(context).pop(),
           child: Text(
-            "cancel",
+            context.t.cancel,
             style: context.textTheme.bodyMedium?.copyWith(
               fontWeight: FontWeight.w600,
               color: context.colorScheme.error,
             ),
-          ).tr(),
+          ),
         ),
         TextButton(
-          onPressed: () => context.maybePop(latlng),
+          onPressed: onUpdate,
           child: Text(
-            "action_common_update",
+            context.t.action_common_update,
             style: context.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600, color: context.primaryColor),
-          ).tr(),
+          ),
         ),
       ],
     );
   }
 }
 
-class _ManualPickerInput extends HookWidget {
-  final String initialValue;
+class _ManualPickerInput extends StatelessWidget {
+  final TextEditingController controller;
   final String decorationText;
   final String hintText;
   final String errorText;
   final FocusNode focusNode;
-  final bool Function(String value) validator;
-  final Function(double value) onUpdated;
+  final ValueNotifier<double> coordinate;
+  final ValueNotifier<bool> isValid;
+  final double? Function(String value) parse;
+  final VoidCallback onUpdated;
 
   const _ManualPickerInput({
-    required this.initialValue,
+    required this.controller,
     required this.decorationText,
     required this.hintText,
     required this.errorText,
     required this.focusNode,
-    required this.validator,
+    required this.coordinate,
+    required this.isValid,
+    required this.parse,
     required this.onUpdated,
   });
   @override
   Widget build(BuildContext context) {
-    final isValid = useState(true);
-    final controller = useTextEditingController(text: initialValue);
-
     void onEditingComplete() {
-      isValid.value = validator(controller.text);
+      isValid.value = parse(controller.text) != null;
       if (isValid.value) {
-        onUpdated(controller.text.toDouble());
+        onUpdated();
       }
     }
 
@@ -116,124 +171,18 @@ class _ManualPickerInput extends HookWidget {
       textInputAction: TextInputAction.done,
       autofocus: false,
       decoration: InputDecoration(
-        labelText: decorationText.tr(),
+        labelText: decorationText,
         labelStyle: TextStyle(fontWeight: FontWeight.bold, color: context.primaryColor),
         floatingLabelBehavior: FloatingLabelBehavior.auto,
         border: const OutlineInputBorder(),
-        hintText: hintText.tr(),
+        hintText: hintText,
         hintStyle: const TextStyle(fontWeight: FontWeight.normal, fontSize: 14),
-        errorText: isValid.value ? null : errorText.tr(),
+        errorText: isValid.value ? null : errorText,
       ),
+      onChanged: (text) => coordinate.value = parse(text) ?? coordinate.value,
       onEditingComplete: onEditingComplete,
       keyboardType: const TextInputType.numberWithOptions(decimal: true, signed: true),
-      inputFormatters: [LengthLimitingTextInputFormatter(8)],
       onTapOutside: (_) => focusNode.unfocus(),
-    );
-  }
-}
-
-class _ManualPicker extends HookWidget {
-  final LatLng latlng;
-  final Function() onModeSwitch;
-  final Function(double) onLatUpdated;
-  final Function(double) onLonUpdated;
-
-  const _ManualPicker({
-    required this.latlng,
-    required this.onModeSwitch,
-    required this.onLatUpdated,
-    required this.onLonUpdated,
-  });
-
-  bool _validateLat(String value) {
-    final l = double.tryParse(value);
-    return l != null && l > -90 && l < 90;
-  }
-
-  bool _validateLong(String value) {
-    final l = double.tryParse(value);
-    return l != null && l > -180 && l < 180;
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final latitiudeFocusNode = useFocusNode();
-    final longitudeFocusNode = useFocusNode();
-
-    void onLatitudeUpdated(double value) {
-      onLatUpdated(value);
-      longitudeFocusNode.requestFocus();
-    }
-
-    void onLongitudeEditingCompleted(double value) {
-      onLonUpdated(value);
-      longitudeFocusNode.unfocus();
-    }
-
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        const Text("edit_location_dialog_title", textAlign: TextAlign.center).tr(),
-        const SizedBox(height: 12),
-        TextButton.icon(
-          icon: const Text("location_picker_choose_on_map").tr(),
-          label: const Icon(Icons.map_outlined, size: 16),
-          onPressed: onModeSwitch,
-        ),
-        const SizedBox(height: 12),
-        _ManualPickerInput(
-          initialValue: latlng.latitude.toStringAsFixed(4),
-          decorationText: "latitude",
-          hintText: "location_picker_latitude_hint",
-          errorText: "location_picker_latitude_error",
-          focusNode: latitiudeFocusNode,
-          validator: _validateLat,
-          onUpdated: onLatitudeUpdated,
-        ),
-        const SizedBox(height: 24),
-        _ManualPickerInput(
-          initialValue: latlng.longitude.toStringAsFixed(4),
-          decorationText: "longitude",
-          hintText: "location_picker_longitude_hint",
-          errorText: "location_picker_longitude_error",
-          focusNode: longitudeFocusNode,
-          validator: _validateLong,
-          onUpdated: onLongitudeEditingCompleted,
-        ),
-      ],
-    );
-  }
-}
-
-class _MapPicker extends StatelessWidget {
-  final LatLng latlng;
-  final Function() onModeSwitch;
-  final Function() onMapTap;
-
-  const _MapPicker({required this.latlng, required this.onModeSwitch, required this.onMapTap, super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        const Text("edit_location_dialog_title", textAlign: TextAlign.center).tr(),
-        const SizedBox(height: 12),
-        TextButton.icon(
-          icon: Text("${latlng.latitude.toStringAsFixed(4)}, ${latlng.longitude.toStringAsFixed(4)}"),
-          label: const Icon(Icons.edit_outlined, size: 16),
-          onPressed: onModeSwitch,
-        ),
-        const SizedBox(height: 12),
-        MapThumbnail(
-          centre: latlng,
-          height: 200,
-          width: 200,
-          zoom: 8,
-          showMarkerPin: true,
-          onTap: (_, __) => onMapTap(),
-        ),
-      ],
     );
   }
 }

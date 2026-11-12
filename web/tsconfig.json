@@ -1,18 +1,18 @@
 {
   "compilerOptions": {
-    "allowJs": true,
-    "checkJs": true,
-    "esModuleInterop": true,
-    "forceConsistentCasingInFileNames": true,
-    "module": "es2022",
-    "moduleResolution": "bundler",
+    "module": "esnext",
     "noImplicitOverride": true,
-    "resolveJsonModule": true,
-    "skipLibCheck": true,
+    "paths": {
+      "#i18n/*": ["../i18n/*"],
+      "#test/*": ["./test/*"]
+    },
+    "rootDir": ".",
     "sourceMap": true,
     "strict": true,
     "target": "es2022",
-    "types": ["vitest/globals"]
+    "types": ["$app/types", "vitest/globals"]
   },
-  "extends": "./.svelte-kit/tsconfig.json"
+  "exclude": ["vite.config.ts", "src/service-worker/*"],
+  "extends": "$app/tsconfig",
+  "include": ["src", "test/unit", "vite.config.ts"]
 }

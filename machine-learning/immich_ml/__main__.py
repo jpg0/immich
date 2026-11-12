@@ -13,6 +13,11 @@ else:
 
 module_dir = Path(__file__).parent
 
+# on i915, Intel's runtime submits every allocation in the process with each run it gives OpenVINO's GPU plugin
+if any(driver.resolve().name == "i915" for driver in Path("/sys/class/drm").glob("renderD*/device/driver")):
+    os.environ.setdefault("NEOReadDebugKeys", "1")
+    os.environ.setdefault("EnableDirectSubmission", "0")
+
 
 def is_ipv6(host: str) -> bool:
     try:
@@ -43,12 +48,11 @@ try:
             str(settings.workers),
             "-t",
             str(settings.worker_timeout),
-            "--log-config-json",
-            module_dir / "log_conf.json",
             "--keep-alive",
             str(settings.http_keepalive_timeout_s),
             "--graceful-timeout",
             "10",
+            "--no-control-socket",
         ],
     ) as cmd:
         cmd.wait()

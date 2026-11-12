@@ -2,7 +2,7 @@ import Foundation
 import SwiftUI
 import WidgetKit
 
-let IMMICH_SHARE_GROUP = "group.app.immich.share"
+let IMMICH_SHARE_GROUP = Bundle.main.object(forInfoDictionaryKey: "AppGroupId") as! String
 
 enum WidgetError: Error, Codable {
   case noLogin
@@ -25,7 +25,7 @@ extension WidgetError: LocalizedError {
       return "Login to Immich"
 
     case .fetchFailed:
-      return "Unable to connect to your Immich instance"
+      return "Unable to connect to Immich"
 
     case .albumNotFound:
       return "Album not found"
@@ -203,7 +203,10 @@ class ImmichAPI {
 
   func fetchMemory(for date: Date) async throws -> [MemoryResult] {
     // get URL
-    let memoryParams = [URLQueryItem(name: "for", value: date.ISO8601Format())]
+    let localDay = date.formatted(
+      Date.ISO8601FormatStyle(timeZone: .current).year().month().day().dateSeparator(.dash)
+    )
+    let memoryParams = [URLQueryItem(name: "for", value: localDay)]
     guard
       let searchURL = buildRequestURL(
         serverConfig: serverConfig,
@@ -224,8 +227,8 @@ class ImmichAPI {
     return try JSONDecoder().decode([MemoryResult].self, from: data)
   }
 
-  func fetchImage(asset: Asset) async throws(FetchError) -> UIImage {
-    let thumbnailParams = [URLQueryItem(name: "size", value: "preview")]
+  func fetchImage(asset: Asset, targetSize: CGSize? = nil) async throws(FetchError) -> UIImage {
+    let thumbnailParams = [URLQueryItem(name: "size", value: "preview"), URLQueryItem(name: "edited", value: "true")]
     let assetEndpoint = "/assets/" + asset.id + "/thumbnail"
 
     guard
@@ -242,10 +245,23 @@ class ImmichAPI {
     else {
       throw .invalidURL
     }
+    var maxPixelSize = 512
+    // Decoding to fill the widget, a panorama's long edge can exceed the memory limit.
+    // To prevent this, cap the long side at 2x the widget.
+    let maxDecodeMultiplier = 2
+
+    if let targetSize,
+      let props = CGImageSourceCopyPropertiesAtIndex(imageSource, 0, nil) as? [CFString: Any],
+      let width = props[kCGImagePropertyPixelWidth] as? Int,
+      let height = props[kCGImagePropertyPixelHeight] as? Int {
+      let scale = max(targetSize.width / CGFloat(width), targetSize.height / CGFloat(height))
+      maxPixelSize = Int(ceil(CGFloat(max(width, height)) * scale))
+      maxPixelSize = min(maxPixelSize, Int(max(targetSize.width, targetSize.height)) * maxDecodeMultiplier)
+    }
 
     let decodeOptions: [NSString: Any] = [
       kCGImageSourceCreateThumbnailFromImageAlways: true,
-      kCGImageSourceThumbnailMaxPixelSize: 512,
+      kCGImageSourceThumbnailMaxPixelSize: maxPixelSize,
       kCGImageSourceCreateThumbnailWithTransform: true,
     ]
 
@@ -257,6 +273,17 @@ class ImmichAPI {
       )
     else {
       throw .fetchFailed
+    }
+
+    if let targetSize {
+      let ratio = targetSize.width / targetSize.height
+      let cropWidth = min(CGFloat(thumbnail.width), CGFloat(thumbnail.height) * ratio)
+      let cropHeight = min(CGFloat(thumbnail.height), CGFloat(thumbnail.width) / ratio)
+      let x = (CGFloat(thumbnail.width) - cropWidth) / 2
+      let y = (CGFloat(thumbnail.height) - cropHeight) / 2
+      if let cropped = thumbnail.cropping(to: CGRect(x: x, y: y, width: cropWidth, height: cropHeight)) {
+        return UIImage(cgImage: cropped)
+      }
     }
 
     return UIImage(cgImage: thumbnail)

@@ -1,8 +1,8 @@
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:openapi/api.dart';
 import 'package:immich_mobile/utils/openapi_patching.dart';
+import 'package:openapi/api.dart';
 
 void main() {
   group('Test OpenApi Patching', () {
@@ -21,12 +21,12 @@ void main() {
 """);
 
       upgradeDto(value, targetType);
-      expect(value['tags'], TagsResponse().toJson());
+      expect(value['tags'], TagsResponse(enabled: false, sidebarWeb: false).toJson());
       expect(value['download']['includeEmbeddedVideos'], false);
     });
 
     test('addDefault', () {
-      dynamic value = jsonDecode("""
+      final dynamic value = jsonDecode("""
 {
   "download": {
     "archiveSize": 4294967296,
@@ -44,6 +44,18 @@ void main() {
       defaultValue = 'gamma';
       addDefault(value, keys, defaultValue);
       expect(value['alpha']['beta'], 'gamma');
+    });
+
+    test('addDefault with null', () {
+      final dynamic value = jsonDecode("""
+{
+  "download": {
+    "archiveSize": 4294967296,
+    "includeEmbeddedVideos": false
+  }
+}
+""");
+      expect(value['download']['unknownKey'], isNull);
     });
   });
 }

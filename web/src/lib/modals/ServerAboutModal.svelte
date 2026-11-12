@@ -1,6 +1,6 @@
 <script lang="ts">
-  import ServerAboutItem from '$lib/components/ServerAboutItem.svelte';
-  import { locale } from '$lib/stores/preferences.store';
+  import ServerAboutItem from '#lib/components/ServerAboutItem.svelte';
+  import { locale } from '#lib/stores/preferences.store.ts';
   import { type ServerAboutResponseDto, type ServerVersionHistoryResponseDto } from '@immich/sdk';
   import { Alert, Label, Modal, ModalBody } from '@immich/ui';
   import { DateTime } from 'luxon';
@@ -17,7 +17,7 @@
 
 <Modal title={$t('about')} {onClose}>
   <ModalBody>
-    <div class="flex flex-col sm:grid sm:grid-cols-2 gap-4">
+    <div class="flex flex-col gap-4 sm:grid sm:grid-cols-2">
       {#if info.sourceRef === 'main' && info.repository === 'immich-app/immich'}
         <Alert color="warning" title={$t('main_branch_warning')} class="col-span-full" size="small" />
       {/if}
@@ -61,7 +61,7 @@
         <ServerAboutItem id="build" title={$t('build')} version={info.build} versionHref={info.buildUrl} />
       {/if}
 
-      {#if info.buildImage && info.buildImage}
+      {#if info.buildImage && info.buildImageUrl}
         <ServerAboutItem
           id="build-image"
           title={$t('build_image')}
@@ -74,10 +74,10 @@
         <Label size="small" color="primary" for="version-history">{$t('version_history')}</Label>
         <ul id="version-history" class="list-none">
           {#each versions.slice(0, 5) as item (item.id)}
-            {@const createdAt = DateTime.fromISO(item.createdAt)}
+            {const createdAt = DateTime.fromISO(item.createdAt)}
             <li>
               <span
-                class="immich-form-label pb-2 text-xs"
+                class="pb-2 text-xs immich-form-label"
                 id="version-history"
                 title={createdAt.toLocaleString(DateTime.DATETIME_SHORT_WITH_SECONDS, { locale: $locale })}
               >

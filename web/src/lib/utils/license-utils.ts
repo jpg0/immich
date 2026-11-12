@@ -1,16 +1,26 @@
-import { PUBLIC_IMMICH_BUY_HOST, PUBLIC_IMMICH_PAY_HOST } from '$env/static/public';
-import type { ImmichProduct } from '$lib/constants';
-import { serverConfig } from '$lib/stores/server-config.store';
+import type { ImmichProduct } from '#lib/constants.ts';
+import { authManager } from '#lib/managers/auth-manager.svelte.ts';
+import { queryClient, readPreloadedQuery } from '#lib/queries/client.ts';
+import { getUserConfigQuery } from '#lib/queries/config-user.query.ts';
+import { getAboutInfoQuery } from '#lib/queries/server-info.query.ts';
 import { setServerLicense, setUserLicense, type LicenseResponseDto } from '@immich/sdk';
-import { get } from 'svelte/store';
-import { loadUser } from './auth';
+import { PUBLIC_IMMICH_BUY_HOST, PUBLIC_IMMICH_PAY_HOST } from '$app/env/public';
 
 export const activateProduct = async (licenseKey: string, activationKey: string): Promise<LicenseResponseDto> => {
-  // Send server key to user activation if user is not admin
-  const user = await loadUser();
-  const isServerActivation = user?.isAdmin && licenseKey.search('IMSV') !== -1;
+  // TODO is this needed?
+  await authManager.load();
+
+  const isServerActivation = authManager.user.isAdmin && licenseKey.search('IMSV') !== -1;
   const licenseKeyDto = { licenseKey, activationKey };
-  return isServerActivation ? setServerLicense({ licenseKeyDto }) : setUserLicense({ licenseKeyDto });
+  // Send server key to user activation if user is not admin
+  if (!isServerActivation) {
+    return setUserLicense({ licenseKeyDto });
+  }
+
+  const license = await setServerLicense({ licenseKeyDto });
+  // contains license status
+  await queryClient.invalidateQueries({ queryKey: getAboutInfoQuery().queryKey });
+  return license;
 };
 
 export const getActivationKey = async (licenseKey: string): Promise<string> => {
@@ -24,6 +34,9 @@ export const getActivationKey = async (licenseKey: string): Promise<string> => {
 export const getLicenseLink = (license: ImmichProduct) => {
   const url = new URL('/', PUBLIC_IMMICH_BUY_HOST);
   url.searchParams.append('productId', license);
-  url.searchParams.append('instanceUrl', get(serverConfig).externalDomain || globalThis.origin);
+  url.searchParams.append(
+    'instanceUrl',
+    readPreloadedQuery(getUserConfigQuery()).server.externalDomain || globalThis.origin,
+  );
   return url.href;
 };

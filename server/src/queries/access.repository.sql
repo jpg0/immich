@@ -14,27 +14,26 @@ select
   "activity"."id"
 from
   "activity"
-  left join "album" on "activity"."albumId" = "album"."id"
+  inner join "album" on "activity"."albumId" = "album"."id"
   and "album"."deletedAt" is null
+  inner join "album_user" on "album"."id" = "album_user"."albumId"
+  and "album_user"."role" = 'owner'
+  and "album_user"."userId" = $1::uuid
 where
-  "activity"."id" in ($1)
-  and "album"."ownerId" = $2::uuid
+  "activity"."id" in ($2)
 
 -- AccessRepository.activity.checkCreateAccess
 select
   "album"."id"
 from
   "album"
-  left join "album_user" as "albumUsers" on "albumUsers"."albumsId" = "album"."id"
-  left join "user" on "user"."id" = "albumUsers"."usersId"
+  inner join "album_user" as "albumUsers" on "albumUsers"."albumId" = "album"."id"
+  inner join "user" on "user"."id" = "albumUsers"."userId"
   and "user"."deletedAt" is null
 where
   "album"."id" in ($1)
   and "album"."isActivityEnabled" = $2
-  and (
-    "album"."ownerId" = $3
-    or "user"."id" = $4
-  )
+  and "user"."id" = $3
   and "album"."deletedAt" is null
 
 -- AccessRepository.album.checkOwnerAccess
@@ -42,9 +41,11 @@ select
   "album"."id"
 from
   "album"
+  inner join "album_user" on "album"."id" = "album_user"."albumId"
+  and "album_user"."role" = 'owner'
+  and "album_user"."userId" = $1
 where
-  "album"."id" in ($1)
-  and "album"."ownerId" = $2
+  "album"."id" in ($2)
   and "album"."deletedAt" is null
 
 -- AccessRepository.album.checkSharedAlbumAccess
@@ -52,8 +53,8 @@ select
   "album"."id"
 from
   "album"
-  left join "album_user" on "album_user"."albumsId" = "album"."id"
-  left join "user" on "user"."id" = "album_user"."usersId"
+  inner join "album_user" on "album_user"."albumId" = "album"."id"
+  inner join "user" on "user"."id" = "album_user"."userId"
   and "user"."deletedAt" is null
 where
   "album"."id" in ($1)
@@ -81,11 +82,11 @@ select
   "asset"."livePhotoVideoId"
 from
   "album"
-  inner join "album_asset" as "albumAssets" on "album"."id" = "albumAssets"."albumsId"
-  inner join "asset" on "asset"."id" = "albumAssets"."assetsId"
+  inner join "album_asset" as "albumAssets" on "album"."id" = "albumAssets"."albumId"
+  inner join "asset" on "asset"."id" = "albumAssets"."assetId"
   and "asset"."deletedAt" is null
-  left join "album_user" as "albumUsers" on "albumUsers"."albumsId" = "album"."id"
-  left join "user" on "user"."id" = "albumUsers"."usersId"
+  left join "album_user" as "albumUsers" on "albumUsers"."albumId" = "album"."id"
+  left join "user" on "user"."id" = "albumUsers"."userId"
   and "user"."deletedAt" is null
   cross join "target"
 where
@@ -93,10 +94,7 @@ where
     "asset"."id" = any (target.ids)
     or "asset"."livePhotoVideoId" = any (target.ids)
   )
-  and (
-    "album"."ownerId" = $2
-    or "user"."id" = $3
-  )
+  and "user"."id" = $2
   and "album"."deletedAt" is null
 
 -- AccessRepository.asset.checkOwnerAccess
@@ -127,29 +125,64 @@ where
   and "asset"."id" in ($2)
 
 -- AccessRepository.asset.checkSharedLinkAccess
+with
+  "target" as (
+    select
+      array[$1]::uuid[] as "ids"
+  ),
+  "link" as (
+    select
+      "shared_link"."id",
+      "shared_link"."albumId"
+    from
+      "shared_link"
+    where
+      "shared_link"."id" = $2
+  )
 select
-  "asset"."id" as "assetId",
-  "asset"."livePhotoVideoId" as "assetLivePhotoVideoId",
-  "albumAssets"."id" as "albumAssetId",
-  "albumAssets"."livePhotoVideoId" as "albumAssetLivePhotoVideoId"
+  "asset"."id",
+  "asset"."livePhotoVideoId"
 from
-  "shared_link"
-  left join "album" on "album"."id" = "shared_link"."albumId"
-  and "album"."deletedAt" is null
-  left join "shared_link_asset" on "shared_link_asset"."sharedLinksId" = "shared_link"."id"
-  left join "asset" on "asset"."id" = "shared_link_asset"."assetsId"
-  and "asset"."deletedAt" is null
-  left join "album_asset" on "album_asset"."albumsId" = "album"."id"
-  left join "asset" as "albumAssets" on "albumAssets"."id" = "album_asset"."assetsId"
-  and "albumAssets"."deletedAt" is null
+  "asset"
+  cross join "target"
+  inner join lateral (
+    select
+      1 as "match"
+    from
+      "link"
+      inner join "shared_link_asset" on "shared_link_asset"."sharedLinkId" = "link"."id"
+    where
+      "shared_link_asset"."assetId" = "asset"."id"
+    union all
+    select
+      1 as "match"
+    from
+      "link"
+      inner join "album" on "album"."id" = "link"."albumId"
+      and "album"."deletedAt" is null
+      inner join "album_asset" on "album_asset"."albumId" = "album"."id"
+    where
+      "album_asset"."assetId" = "asset"."id"
+    limit
+      $3
+  ) as "membership" on true
 where
-  "shared_link"."id" = $1
-  and array[
-    "asset"."id",
-    "asset"."livePhotoVideoId",
-    "albumAssets"."id",
-    "albumAssets"."livePhotoVideoId"
-  ] && array[$2]::uuid[]
+  "asset"."deletedAt" is null
+  and (
+    "asset"."id" = any ("target"."ids")
+    or "asset"."livePhotoVideoId" = any ("target"."ids")
+  )
+
+-- AccessRepository.assetFile.checkOwnerAccess
+select
+  "asset_file"."id"
+from
+  "asset_file"
+  inner join "asset" on "asset"."id" = "asset_file"."assetId"
+where
+  "asset"."visibility" != $1
+  and "asset"."ownerId" = $2
+  and "asset_file"."id" in ($3)
 
 -- AccessRepository.authDevice.checkOwnerAccess
 select
@@ -159,6 +192,16 @@ from
 where
   "session"."userId" = $1
   and "session"."id" in ($2)
+
+-- AccessRepository.duplicate.checkOwnerAccess
+select
+  "asset"."duplicateId"
+from
+  "asset"
+where
+  "asset"."duplicateId" in ($1)
+  and "asset"."ownerId" = $2
+  and "asset"."deletedAt" is null
 
 -- AccessRepository.memory.checkOwnerAccess
 select
@@ -179,14 +222,83 @@ where
   "notification"."id" in ($1)
   and "notification"."userId" = $2
 
--- AccessRepository.person.checkOwnerAccess
+-- AccessRepository.clusterGroup.checkInviteAccess
 select
-  "person"."id"
+  "cluster_group_request"."clusterGroupId"
 from
-  "person"
+  "cluster_group_request"
 where
-  "person"."id" in ($1)
-  and "person"."ownerId" = $2
+  "cluster_group_request"."clusterGroupId" in ($1)
+  and "cluster_group_request"."userId" = $2
+
+-- AccessRepository.clusterGroup.checkOwnerAccess
+select
+  "user"."clusterGroupId"
+from
+  "user"
+where
+  "user"."clusterGroupId" in ($1)
+  and "user"."id" = $2
+
+-- AccessRepository.clusterGroupRequest.checkOwnerAccess
+select
+  "cluster_group_request"."id"
+from
+  "cluster_group_request"
+where
+  "cluster_group_request"."id" in ($1)
+  and "cluster_group_request"."userId" = $2
+
+-- AccessRepository.clusterGroupRequest.checkGroupAccess
+select
+  "cluster_group_request"."id"
+from
+  "cluster_group_request"
+where
+  "cluster_group_request"."id" in ($1)
+  and "cluster_group_request"."clusterGroupId" = (
+    select
+      "user"."clusterGroupId"
+    from
+      "user"
+    where
+      "user"."id" = $2
+  )
+
+-- AccessRepository.person.checkAccess
+select
+  "personGroupId",
+  "ownerId"
+from
+  (
+    select
+      unnest($1::uuid[]) as "personGroupId",
+      unnest($2::uuid[]) as "ownerId"
+  ) as "people"
+where
+  (
+    exists (
+      select
+        *
+      from
+        "person"
+      where
+        "people"."personGroupId" = "person"."personGroupId"
+        and "people"."ownerId" = "person"."ownerId"
+        and "person"."ownerId" = $3
+    )
+    or exists (
+      select
+        *
+      from
+        "person_user"
+      where
+        "person_user"."sharedWithId" = $4
+        and "person_user"."role" in ($5)
+        and "people"."personGroupId" = "person_user"."personGroupId"
+        and "people"."ownerId" = "person_user"."sharedById"
+    )
+  )
 
 -- AccessRepository.person.checkFaceOwnerAccess
 select
@@ -207,6 +319,15 @@ from
 where
   "partner"."sharedById" in ($1)
   and "partner"."sharedWithId" = $2
+
+-- AccessRepository.passkey.checkOwnerAccess
+select
+  "passkey"."id"
+from
+  "passkey"
+where
+  "passkey"."id" in ($1)
+  and "passkey"."userId" = $2
 
 -- AccessRepository.session.checkOwnerAccess
 select
@@ -243,3 +364,12 @@ from
 where
   "partner"."sharedById" in ($1)
   and "partner"."sharedWithId" = $2
+
+-- AccessRepository.workflow.checkOwnerAccess
+select
+  "workflow"."id"
+from
+  "workflow"
+where
+  "workflow"."id" in ($1)
+  and "workflow"."ownerId" = $2

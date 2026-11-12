@@ -1,10 +1,11 @@
 <script lang="ts">
-  import AuthPageLayout from '$lib/components/layouts/AuthPageLayout.svelte';
-  import { authManager } from '$lib/managers/auth-manager.svelte';
-  import { user } from '$lib/stores/user.store';
-  import { updateMyUser } from '@immich/sdk';
+  import AuthPageLayout from '#lib/components/layouts/AuthPageLayout.svelte';
+  import { authManager } from '#lib/managers/auth-manager.svelte.ts';
+  import { Route } from '#lib/route.ts';
+  import { handleChangePassword } from '#lib/services/user.service.ts';
   import { Alert, Button, Field, HelperText, PasswordInput, Stack, Text } from '@immich/ui';
   import { t } from 'svelte-i18n';
+  import { goto } from '$app/navigation';
   import type { PageData } from './$types';
 
   interface Props {
@@ -13,18 +14,23 @@
 
   let { data }: Props = $props();
 
+  let currentPassword = $state('');
   let password = $state('');
   let passwordConfirm = $state('');
-  const valid = $derived(password === passwordConfirm && passwordConfirm.length > 0);
+  const valid = $derived(currentPassword.length > 0 && password === passwordConfirm && passwordConfirm.length > 0);
   const errorMessage = $derived(passwordConfirm.length === 0 || valid ? '' : $t('password_does_not_match'));
 
-  const onSubmit = async () => {
+  const onSubmit = async (event: Event) => {
+    event.preventDefault();
+
     if (!valid) {
       return;
     }
 
-    await updateMyUser({ userUpdateMeDto: { password } });
-    await authManager.logout();
+    const success = await handleChangePassword({ password: currentPassword, newPassword: password });
+    if (success) {
+      await goto(Route.logout());
+    }
   };
 </script>
 
@@ -32,10 +38,14 @@
   <form onsubmit={onSubmit} class="flex flex-col gap-4">
     <Alert color="primary" size="small" class="mb-2">
       <Stack gap={4}>
-        <Text>{$t('hi_user', { values: { name: $user.name, email: $user.email } })}</Text>
+        <Text>{$t('hi_user', { values: { name: authManager.user.name, email: authManager.user.email } })}</Text>
         <Text>{$t('change_password_description')}</Text>
       </Stack>
     </Alert>
+
+    <Field label={$t('password')} required>
+      <PasswordInput bind:value={currentPassword} autocomplete="current-password" />
+    </Field>
 
     <Field label={$t('new_password')} required>
       <PasswordInput bind:value={password} autocomplete="new-password" />

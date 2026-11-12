@@ -9,7 +9,9 @@
 </p>
 
 <p align="center">
-<img src="/design/immich-logo-stacked-light.svg" width="300" title="Login With Custom URL">
+  <a href="#">
+    <img src="/design/immich-logo-stacked-light.svg" width="300" alt="Immich Logo">
+  </a>
 </p>
 <h3 align="center">Высокопроизводительное автономное решение для хранения и группировки фото и видео</h3>
 <br/>
@@ -31,21 +33,20 @@
   <a href="README_zh_CN.md">简体中文</a>
   <a href="README_zh_TW.md">正體中文</a>
   <a href="README_uk_UA.md">Українська</a>
+  <a href="README_bg_BG.md">Български</a>
+  <a href="README_pl_PL.md">Polski</a>
   <a href="README_pt_BR.md">Português Brasileiro</a>
   <a href="README_sv_SE.md">Svenska</a>
   <br>
   <a href="README_ar_JO.md">العربية</a>
   <a href="README_vi_VN.md">Tiếng Việt</a>
   <a href="README_th_TH.md">ภาษาไทย</a>
+  <a href="README_ml_IN.md">മലയാളം</a>
 </p>
 
-## Предупреждение
-
-- ⚠️ Этот проект находится **в очень активной** разработке.
-- ⚠️ Ожидайте недоработки и глобальные изменения.
-- ⚠️ **Не используйте это приложение как единственное хранилище своих фото и видео.**
-- ⚠️ Всегда следуйте [плану резервного копирования «3-2-1»](https://www.backblaze.com/blog/the-3-2-1-backup-strategy/ "Стратегии резервного копирования: Почему стратегия резервного копирования «3-2-1» — лучшая") для ваших драгоценных фотографий и видео!
-
+> [!WARNING]
+> ⚠️ Всегда следуйте [плану резервного копирования «3-2-1»](https://www.backblaze.com/blog/the-3-2-1-backup-strategy/) для ваших драгоценных фотографий и видео!
+>
 
 > [!NOTE]
 > Инструкции по установке и документация по ссылке https://immich.app/
@@ -55,7 +56,7 @@
 - [Официальная документация](https://docs.immich.app)
 - [Введение](https://docs.immich.app/overview/introduction)
 - [Установка](https://docs.immich.app/install/requirements)
-- [План разработки](https://github.com/orgs/immich-app/projects/1)
+- [План разработки](https://immich.app/roadmap)
 - [Демо](#demo)
 - [Возможности](#features)
 - [Перевод](https://docs.immich.app/developer/translations)
@@ -94,7 +95,7 @@
 | LivePhoto/MotionPhoto воспроизведение и бекап          | Да         | Да  |
 | Отображение 360° изображений                           | Нет        | Да  |
 | Настраиваемая структура хранилища                      | Да         | Да  |
-| Общий доступ к контенту                                | Нет        | Да  |
+| Общий доступ к контенту                                | Да         | Да  |
 | Архив и избранное                                      | Да         | Да  |
 | Мировая карта                                          | Да         | Да  |
 | Совместное использование                               | Да         | Да  |
@@ -104,7 +105,7 @@
 | Галереи только для просмотра                           | Да         | Да  |
 | Коллажи                                                | Да         | Да  |
 | Метки (теги)                                           | Нет        | Да  |
-| Просмотр папкой                                        | Нет        | Да  |
+| Просмотр папкой                                        | Да         | Да  |
 
 ## Перевод
 
@@ -117,16 +118,6 @@
 ## Активность репозитория
 
 ![Activities](https://repobeats.axiom.co/api/embed/9e86d9dc3ddd137161f2f6d2e758d7863b1789cb.svg "Repobeats analytics image")
-
-## История звёзд
-
-<a href="https://star-history.com/#immich-app/immich&Date">
- <picture>
-   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=immich-app/immich&type=Date&theme=dark" />
-   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=immich-app/immich&type=Date" />
-   <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=immich-app/immich&type=Date" width="100%" />
- </picture>
-</a>
 
 ## Участники
 

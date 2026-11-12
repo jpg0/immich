@@ -1,9 +1,9 @@
 <script lang="ts">
-  import { getAssetControlContext } from '$lib/components/timeline/AssetSelectControlBar.svelte';
-  import { authManager } from '$lib/managers/auth-manager.svelte';
-  import { handleError } from '$lib/utils/handle-error';
-  import { removeSharedLinkAssets, type SharedLinkResponseDto } from '@immich/sdk';
-  import { IconButton, modalManager, toastManager } from '@immich/ui';
+  import { assetMultiSelectManager } from '#lib/managers/asset-multi-select-manager.svelte.ts';
+  import { executeMutation } from '#lib/queries/client.ts';
+  import { removeSharedLinkAssetsMutation } from '#lib/queries/shared-link.query.ts';
+  import { type SharedLinkResponseDto } from '@immich/sdk';
+  import { IconButton, shortcut, toastManager } from '@immich/ui';
   import { mdiDeleteOutline } from '@mdi/js';
   import { t } from 'svelte-i18n';
 
@@ -13,50 +13,31 @@
 
   let { sharedLink = $bindable() }: Props = $props();
 
-  const { getAssets, clearSelect } = getAssetControlContext();
-
-  const handleRemove = async () => {
-    const isConfirmed = await modalManager.showDialog({
-      title: $t('remove_assets_title'),
-      prompt: $t('remove_assets_shared_link_confirmation', { values: { count: getAssets().length } }),
-      confirmText: $t('remove'),
+  const onAction = async () => {
+    const assetIds = assetMultiSelectManager.assets.map(({ id }) => id);
+    await executeMutation(removeSharedLinkAssetsMutation, [{ id: sharedLink.id, assetIdsDto: { assetIds } }], {
+      confirm: {
+        title: $t('remove_assets_title'),
+        prompt: $t('remove_assets_shared_link_confirmation', { values: { count: assetIds.length } }),
+        confirmText: $t('remove'),
+      },
+      onSuccess: (results) => {
+        const removed = new Set(results.filter(({ success }) => success).map(({ assetId }) => assetId));
+        sharedLink.assets = sharedLink.assets.filter(({ id }) => !removed.has(id));
+        toastManager.primary($t('assets_removed_count', { values: { count: removed.size } }));
+        assetMultiSelectManager.clear();
+      },
     });
-
-    if (!isConfirmed) {
-      return;
-    }
-
-    try {
-      const results = await removeSharedLinkAssets({
-        ...authManager.params,
-        id: sharedLink.id,
-        assetIdsDto: {
-          assetIds: [...getAssets()].map((asset) => asset.id),
-        },
-      });
-
-      for (const result of results) {
-        if (!result.success) {
-          continue;
-        }
-
-        sharedLink.assets = sharedLink.assets.filter((asset) => asset.id !== result.assetId);
-      }
-
-      const count = results.filter((item) => item.success).length;
-      toastManager.success($t('assets_removed_count', { values: { count } }));
-      clearSelect();
-    } catch (error) {
-      handleError(error, $t('errors.unable_to_remove_assets_from_shared_link'));
-    }
   };
 </script>
+
+<svelte:window {@attach shortcut({ shortcut: { key: 'Delete' }, onShortcut: onAction })} />
 
 <IconButton
   shape="round"
   color="secondary"
   variant="ghost"
   aria-label={$t('remove_from_shared_link')}
-  onclick={handleRemove}
+  onclick={onAction}
   icon={mdiDeleteOutline}
 />

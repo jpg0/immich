@@ -1,18 +1,19 @@
-import { locale } from '$lib/stores/preferences.store';
-import { parseUtcDate } from '$lib/utils/date-time';
-import { formatGroupTitle, toISOYearMonthUTC } from '$lib/utils/timeline-util';
+import { locale } from '#lib/stores/preferences.store.ts';
+import { parseUtcDate } from '#lib/utils/date-time.ts';
+import { formatGroupTitle, toISOYearMonthUTC } from '#lib/utils/timeline-util.ts';
 import { DateTime } from 'luxon';
 
 describe('formatGroupTitle', () => {
   beforeAll(() => {
     vi.useFakeTimers();
-    process.env.TZ = 'UTC';
+  });
+
+  beforeEach(() => {
     vi.setSystemTime(new Date('2024-07-27T12:00:00Z'));
   });
 
   afterAll(() => {
     vi.useRealTimers();
-    delete process.env.TZ;
   });
 
   it('formats today', () => {
@@ -29,6 +30,13 @@ describe('formatGroupTitle', () => {
     expect(formatGroupTitle(date)).toBe('yesterday');
     locale.set('fr');
     expect(formatGroupTitle(date)).toBe('hier');
+  });
+
+  it('formats yesterday across month boundaries', () => {
+    vi.setSystemTime(new Date('2024-05-01T12:00:00Z'));
+    const date = parseUtcDate('2024-04-30T23:59:59Z');
+    locale.set('en');
+    expect(formatGroupTitle(date)).toBe('yesterday');
   });
 
   it('formats last week', () => {

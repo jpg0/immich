@@ -1,5 +1,7 @@
 # Hardware Transcoding
 
+import ComposeBuilder from '/docs/partials/_compose-builder.mdx';
+
 This feature allows you to use a GPU to accelerate transcoding and reduce CPU load.
 Note that hardware transcoding produces significantly larger videos than software transcoding with similar settings, typically with lower quality. Using slow presets and preferring more efficient codecs can narrow this gap.
 As this is a new feature, it is still experimental and may not work on all systems.
@@ -57,6 +59,8 @@ For RKMPP to work:
 
 ## Setup
 
+<ComposeBuilder />
+
 #### Basic Setup
 
 1. If you do not already have it, download the latest [`hwaccel.transcoding.yml`][hw-file] file and ensure it's in the same folder as the `docker-compose.yml`.
@@ -70,6 +74,22 @@ For RKMPP to work:
    Note: For Jasper Lake and Elkhart Lake CPUs, you will need to set the `Hardware Acceleration` -> `Constant quality mode` to `CQP`
 
 5. (Optional) Enable hardware decoding for optimal performance.
+
+<details>
+<summary>immich.json</summary>
+
+If you use a [configuration file](/install/config-file.md), use the `accel` option to select the hardware (e.g. `qsv` for Intel or `nvenc` for Nvidia). Set `accelDecode` to `true` if you want hardware decoding.
+
+```json
+{
+  "ffmpeg": {
+    "accel": "qsv",
+    "accelDecode": true
+  }
+}
+```
+
+</details>
 
 #### Single Compose File
 

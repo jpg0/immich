@@ -1,24 +1,25 @@
-import { langs } from '$lib/constants';
-import { getClosestAvailableLocale } from '$lib/utils/i18n';
-import { readFileSync, readdirSync } from 'node:fs';
+import { getClosestAvailableLocale, langs } from '#lib/utils/i18n.ts';
 
 describe('i18n', () => {
   describe('loaders', () => {
-    const languageFiles = readdirSync('../i18n').sort();
-    for (const filename of languageFiles) {
+    const languageFiles = import.meta.glob<{ default: unknown }>('#i18n/*.json');
+    for (const [path, load] of Object.entries(languageFiles).sort(([a], [b]) => a.localeCompare(b))) {
+      const filename = path.split('/').pop()!;
       test(`${filename} should have a loader`, async () => {
+        if (filename === 'package.json') {
+          return;
+        }
+
         const code = filename.replaceAll('.json', '');
-        const item = langs.find((lang) => lang.weblateCode === code || lang.code === code);
+        const item = langs.find((lang) => lang.code === code);
         expect(item, `${filename} has no loader`).toBeDefined();
         if (!item) {
           return;
         }
 
-        // verify it loads the right file
         const module: { default?: unknown } = await item.loader();
-        const translations = JSON.stringify(module.default, null, 2).trim();
-        const content = readFileSync(`../i18n/${filename}`).toString().trim();
-        expect(translations === content, `${item.name} did not load ${filename}`).toEqual(true);
+        const { default: content } = await load();
+        expect(module.default, `${item.name} did not load ${filename}`).toEqual(content);
       });
     }
   });
@@ -46,6 +47,23 @@ describe('i18n', () => {
     it('ignores the locale for a more specific match', () => {
       expect(getClosestAvailableLocale(['zh'], allLocales)).toBeUndefined();
       expect(getClosestAvailableLocale(['de', 'zh', 'en-US'], allLocales)).toBe('en-US');
+    });
+
+    it('matches underscore-based stored locale codes against normalized locale lists', () => {
+      const allLocales = ['de-CH', 'pt-BR', 'sr-Cyrl', 'zh-Hant'];
+      expect(getClosestAvailableLocale(['de_CH'], allLocales)).toBe('de_CH');
+      expect(getClosestAvailableLocale(['pt_BR'], allLocales)).toBe('pt_BR');
+      expect(getClosestAvailableLocale(['sr_Cyrl'], allLocales)).toBe('sr_Cyrl');
+      expect(getClosestAvailableLocale(['zh_Hant'], allLocales)).toBe('zh_Hant');
+    });
+
+    it('should handle language aliases', () => {
+      const allLocales = ['zh-Hans', 'zh-Hant'];
+      expect(getClosestAvailableLocale(['zh-CN'], allLocales)).toBe('zh-Hans');
+      expect(getClosestAvailableLocale(['zh-HK'], allLocales)).toBe('zh-Hant');
+      expect(getClosestAvailableLocale(['zh-MO'], allLocales)).toBe('zh-Hant');
+      expect(getClosestAvailableLocale(['zh-SG'], allLocales)).toBe('zh-Hans');
+      expect(getClosestAvailableLocale(['zh-TW'], allLocales)).toBe('zh-Hant');
     });
   });
 });

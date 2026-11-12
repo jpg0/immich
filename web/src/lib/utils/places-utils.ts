@@ -1,55 +1,23 @@
-import { PlacesGroupBy, placesViewSettings, type PlacesViewSettings } from '$lib/stores/preferences.store';
+import { PlacesGroupBy, placesViewSettings, type PlacesViewSettings } from '#lib/stores/preferences.store.ts';
 import { type AssetResponseDto } from '@immich/sdk';
 import { get } from 'svelte/store';
 
 /**
- * --------------
- * Places Grouping
- * --------------
- */
+--------------
+Places Grouping
+--------------
+*/
 export interface PlacesGroup {
   id: string;
   name: string;
   places: AssetResponseDto[];
 }
 
-export interface PlacesGroupOptionMetadata {
-  id: PlacesGroupBy;
-  isDisabled: () => boolean;
-}
-
-export const groupOptionsMetadata: PlacesGroupOptionMetadata[] = [
-  {
-    id: PlacesGroupBy.None,
-    isDisabled: () => false,
-  },
-  {
-    id: PlacesGroupBy.Country,
-    isDisabled: () => false,
-  },
-];
-
-export const findGroupOptionMetadata = (groupBy: string) => {
-  // Default is no grouping
-  const defaultGroupOption = groupOptionsMetadata[0];
-  return groupOptionsMetadata.find(({ id }) => groupBy === id) ?? defaultGroupOption;
-};
-
-export const getSelectedPlacesGroupOption = (settings: PlacesViewSettings) => {
-  const defaultGroupOption = PlacesGroupBy.None;
-  const albumGroupOption = settings.groupBy ?? defaultGroupOption;
-
-  if (findGroupOptionMetadata(albumGroupOption).isDisabled()) {
-    return defaultGroupOption;
-  }
-  return albumGroupOption;
-};
-
 /**
- * ----------------------------
- * Places Groups Collapse/Expand
- * ----------------------------
- */
+----------------------------
+Places Groups Collapse/Expand
+----------------------------
+*/
 const getCollapsedPlacesGroups = (settings: PlacesViewSettings) => {
   settings.collapsedGroups ??= {};
   const { collapsedGroups, groupBy } = settings;

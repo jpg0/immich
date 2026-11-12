@@ -1,35 +1,18 @@
 <script lang="ts">
-  import AdminPageLayout from '$lib/components/layouts/AdminPageLayout.svelte';
-  import ServerStatisticsPanel from '$lib/components/server-statistics/ServerStatisticsPanel.svelte';
-  import { asyncTimeout } from '$lib/utils';
-  import { getServerStatistics } from '@immich/sdk';
-  import { onDestroy, onMount } from 'svelte';
+  import AdminPageLayout from '#lib/components/layouts/AdminPageLayout.svelte';
+  import { Container } from '@immich/ui';
   import type { PageData } from './$types';
+  import ServerStatisticsPanel from './ServerStatisticsPanel.svelte';
 
-  interface Props {
+  type Props = {
     data: PageData;
-  }
+  };
 
-  let { data = $bindable() }: Props = $props();
-
-  let running = true;
-
-  onMount(async () => {
-    while (running) {
-      data.stats = await getServerStatistics();
-      await asyncTimeout(5000);
-    }
-  });
-
-  onDestroy(() => {
-    running = false;
-  });
+  const { data }: Props = $props();
 </script>
 
-<AdminPageLayout title={data.meta.title}>
-  <section id="setting-content" class="flex place-content-center sm:mx-4">
-    <section class="w-full pb-28 sm:w-5/6 md:w-212.5">
-      <ServerStatisticsPanel stats={data.stats} />
-    </section>
-  </section>
+<AdminPageLayout breadcrumbs={[{ title: data.meta.title }]}>
+  <Container size="large" center>
+    <ServerStatisticsPanel />
+  </Container>
 </AdminPageLayout>

@@ -1,47 +1,71 @@
 import { BadRequestException, ForbiddenException, Injectable, UnauthorizedException } from '@nestjs/common';
 import { PostgresError } from 'postgres';
-import { SharedLink } from 'src/database';
-import { AssetIdErrorReason, AssetIdsResponseDto } from 'src/dtos/asset-ids.response.dto';
-import { AssetIdsDto } from 'src/dtos/asset.dto';
-import { AuthDto } from 'src/dtos/auth.dto';
+import { SharedLink } from 'src/database.js';
+import { AssetIdErrorReason, AssetIdsResponseDto } from 'src/dtos/asset-ids.response.dto.js';
+import { AssetIdsDto } from 'src/dtos/asset.dto.js';
+import { AuthDto } from 'src/dtos/auth.dto.js';
 import {
-  mapSharedLink,
-  mapSharedLinkWithoutMetadata,
   SharedLinkCreateDto,
   SharedLinkEditDto,
-  SharedLinkPasswordDto,
+  SharedLinkLoginDto,
   SharedLinkResponseDto,
   SharedLinkSearchDto,
-} from 'src/dtos/shared-link.dto';
-import { Permission, SharedLinkType } from 'src/enum';
-import { BaseService } from 'src/services/base.service';
-import { getExternalDomain, OpenGraphTags } from 'src/utils/misc';
+  mapSharedLink,
+} from 'src/dtos/shared-link.dto.js';
+import { Permission, SharedLinkType } from 'src/enum.js';
+import { BaseService } from 'src/services/base.service.js';
+import { asDateTimeString } from 'src/utils/date.js';
+import { OpenGraphTags, findOrFail, getExternalDomain } from 'src/utils/misc.js';
 
 @Injectable()
 export class SharedLinkService extends BaseService {
-  async getAll(auth: AuthDto, { albumId }: SharedLinkSearchDto): Promise<SharedLinkResponseDto[]> {
+  async getAll(auth: AuthDto, { id, albumId }: SharedLinkSearchDto): Promise<SharedLinkResponseDto[]> {
     return this.sharedLinkRepository
-      .getAll({ userId: auth.user.id, albumId })
-      .then((links) => links.map((link) => mapSharedLink(link)));
+      .getAll({ userId: auth.user.id, id, albumId })
+
+      .then((links) => links.map((link) => mapSharedLink(link, { auth })));
   }
 
-  async getMine(auth: AuthDto, dto: SharedLinkPasswordDto): Promise<SharedLinkResponseDto> {
+  async login(auth: AuthDto, dto: SharedLinkLoginDto) {
     if (!auth.sharedLink) {
       throw new ForbiddenException();
     }
 
     const sharedLink = await this.findOrFail(auth.user.id, auth.sharedLink.id);
-    const response = this.mapToSharedLink(sharedLink, { withExif: sharedLink.showExif });
-    if (sharedLink.password) {
-      response.token = this.validateAndRefreshToken(sharedLink, dto);
+    const { id, password } = sharedLink;
+
+    if (!password) {
+      throw new BadRequestException('Shared link is not password protected');
     }
 
-    return response;
+    if (password !== dto.password) {
+      throw new UnauthorizedException('Invalid password');
+    }
+
+    return {
+      sharedLink: await this.mapWithAlbumMetadata(sharedLink, { auth }),
+      token: this.asToken({ id, password }),
+    };
+  }
+
+  async getMine(auth: AuthDto, authTokens: string[]) {
+    if (!auth.sharedLink) {
+      throw new ForbiddenException();
+    }
+
+    const sharedLink = await this.findOrFail(auth.user.id, auth.sharedLink.id);
+    const { id, password } = sharedLink;
+
+    if (password && !authTokens.includes(this.asToken({ id, password }))) {
+      throw new UnauthorizedException('Password required');
+    }
+
+    return this.mapWithAlbumMetadata(sharedLink, { auth });
   }
 
   async get(auth: AuthDto, id: string): Promise<SharedLinkResponseDto> {
     const sharedLink = await this.findOrFail(auth.user.id, id);
-    return this.mapToSharedLink(sharedLink, { withExif: true });
+    return this.mapWithAlbumMetadata(sharedLink, { auth });
   }
 
   async create(auth: AuthDto, dto: SharedLinkCreateDto): Promise<SharedLinkResponseDto> {
@@ -76,12 +100,12 @@ export class SharedLinkService extends BaseService {
         password: dto.password,
         expiresAt: dto.expiresAt || null,
         allowUpload: dto.allowUpload ?? true,
-        allowDownload: dto.showMetadata === false ? false : (dto.allowDownload ?? true),
+        allowDownload: dto.showMetadata !== false && (dto.allowDownload ?? true),
         showExif: dto.showMetadata ?? true,
         slug: dto.slug || null,
       });
 
-      return this.mapToSharedLink(sharedLink, { withExif: true });
+      return mapSharedLink(sharedLink, { auth });
     } catch (error) {
       this.handleError(error);
     }
@@ -89,7 +113,8 @@ export class SharedLinkService extends BaseService {
 
   private handleError(error: unknown): never {
     if ((error as PostgresError).constraint_name === 'shared_link_slug_uq') {
-      throw new BadRequestException('Shared link with this slug already exists');
+      this.logger.debug('Shared link with this slug already exists');
+      throw new BadRequestException('Failed to save shared link');
     }
     throw error;
   }
@@ -102,13 +127,13 @@ export class SharedLinkService extends BaseService {
         userId: auth.user.id,
         description: dto.description,
         password: dto.password,
-        expiresAt: dto.changeExpiryTime && !dto.expiresAt ? null : dto.expiresAt,
+        expiresAt: dto.expiresAt,
         allowUpload: dto.allowUpload,
         allowDownload: dto.allowDownload,
         showExif: dto.showMetadata,
         slug: dto.slug || null,
       });
-      return this.mapToSharedLink(sharedLink, { withExif: true });
+      return mapSharedLink(sharedLink, { auth });
     } catch (error) {
       this.handleError(error);
     }
@@ -120,17 +145,12 @@ export class SharedLinkService extends BaseService {
   }
 
   // TODO: replace `userId` with permissions and access control checks
-  private async findOrFail(userId: string, id: string) {
-    const sharedLink = await this.sharedLinkRepository.get(userId, id);
-    if (!sharedLink) {
-      throw new BadRequestException('Shared link not found');
-    }
-    return sharedLink;
+  private findOrFail(userId: string, id: string) {
+    return findOrFail(() => this.sharedLinkRepository.get(userId, id), 'Shared link');
   }
 
   async addAssets(auth: AuthDto, id: string, dto: AssetIdsDto): Promise<AssetIdsResponseDto[]> {
     const sharedLink = await this.findOrFail(auth.user.id, id);
-
     if (sharedLink.type !== SharedLinkType.Individual) {
       throw new BadRequestException('Invalid shared link type');
     }
@@ -179,7 +199,7 @@ export class SharedLinkService extends BaseService {
 
     const results: AssetIdsResponseDto[] = [];
     for (const assetId of dto.assetIds) {
-      const wasRemoved = removedAssetIds.find((id) => id === assetId);
+      const wasRemoved = removedAssetIds.includes(assetId);
       if (!wasRemoved) {
         results.push({ assetId, success: false, error: AssetIdErrorReason.NOT_FOUND });
         continue;
@@ -202,7 +222,8 @@ export class SharedLinkService extends BaseService {
     const config = await this.getConfig({ withCache: true });
     const sharedLink = await this.findOrFail(auth.sharedLink.userId, auth.sharedLink.id);
     const assetId = sharedLink.album?.albumThumbnailAssetId || sharedLink.assets[0]?.id;
-    const assetCount = sharedLink.assets.length > 0 ? sharedLink.assets.length : sharedLink.album?.assets?.length || 0;
+    const [albumMetadata] = sharedLink.album ? await this.albumRepository.getMetadataForIds([sharedLink.album.id]) : [];
+    const assetCount = sharedLink.assets.length > 0 ? sharedLink.assets.length : albumMetadata?.assetCount || 0;
     const imagePath = assetId
       ? `/api/assets/${assetId}/thumbnail?key=${sharedLink.key.toString('base64url')}`
       : '/feature-panel.png';
@@ -214,20 +235,19 @@ export class SharedLinkService extends BaseService {
     };
   }
 
-  private mapToSharedLink(sharedLink: SharedLink, { withExif }: { withExif: boolean }) {
-    return withExif ? mapSharedLink(sharedLink) : mapSharedLinkWithoutMetadata(sharedLink);
+  private async mapWithAlbumMetadata(sharedLink: SharedLink, { auth }: { auth: AuthDto }) {
+    const response = mapSharedLink(sharedLink, { auth });
+    if (response.album) {
+      const [metadata] = await this.albumRepository.getMetadataForIds([response.album.id]);
+      response.album.startDate = asDateTimeString(metadata?.startDate ?? undefined);
+      response.album.endDate = asDateTimeString(metadata?.endDate ?? undefined);
+      response.album.assetCount = metadata?.assetCount ?? 0;
+    }
+
+    return response;
   }
 
-  private validateAndRefreshToken(sharedLink: SharedLink, dto: SharedLinkPasswordDto): string {
-    const token = this.cryptoRepository.hashSha256(`${sharedLink.id}-${sharedLink.password}`);
-    const sharedLinkTokens = dto.token?.split(',') || [];
-    if (sharedLink.password !== dto.password && !sharedLinkTokens.includes(token)) {
-      throw new UnauthorizedException('Invalid password');
-    }
-
-    if (!sharedLinkTokens.includes(token)) {
-      sharedLinkTokens.push(token);
-    }
-    return sharedLinkTokens.join(',');
+  private asToken(sharedLink: { id: string; password: string }) {
+    return this.cryptoRepository.hashSha256(`${sharedLink.id}-${sharedLink.password}`).toString('base64');
   }
 }

@@ -1,39 +1,46 @@
 import { BadRequestException } from '@nestjs/common';
-import { GeneratedImageType, StorageCore } from 'src/cores/storage.core';
-import { AssetFile } from 'src/database';
-import { BulkIdErrorReason, BulkIdResponseDto } from 'src/dtos/asset-ids.response.dto';
-import { UploadFieldName } from 'src/dtos/asset-media.dto';
-import { AuthDto } from 'src/dtos/auth.dto';
-import { AssetFileType, AssetType, AssetVisibility, Permission } from 'src/enum';
-import { AuthRequest } from 'src/middleware/auth.guard';
-import { AccessRepository } from 'src/repositories/access.repository';
-import { AssetRepository } from 'src/repositories/asset.repository';
-import { EventRepository } from 'src/repositories/event.repository';
-import { PartnerRepository } from 'src/repositories/partner.repository';
-import { IBulkAsset, ImmichFile, UploadFile, UploadRequest } from 'src/types';
-import { checkAccess } from 'src/utils/access';
+import { StorageCore } from 'src/cores/storage.core.js';
+import { AssetFile } from 'src/database.js';
+import { BulkIdErrorReason, BulkIdResponseDto } from 'src/dtos/asset-ids.response.dto.js';
+import { UploadFieldName } from 'src/dtos/asset-media.dto.js';
+import { AuthDto } from 'src/dtos/auth.dto.js';
+import { AssetFileType, AssetType, AssetVisibility, Permission } from 'src/enum.js';
+import { AuthRequest } from 'src/middleware/auth.guard.js';
+import { AccessRepository } from 'src/repositories/access.repository.js';
+import { AssetRepository } from 'src/repositories/asset.repository.js';
+import { EventRepository } from 'src/repositories/event.repository.js';
+import { PartnerRepository } from 'src/repositories/partner.repository.js';
+import type { IBulkAsset, ImmichFile, UploadFile, UploadRequest } from 'src/types.js';
+import { checkAccess } from 'src/utils/access.js';
 
-export const getAssetFile = (files: AssetFile[], type: AssetFileType | GeneratedImageType) => {
-  return files.find((file) => file.type === type);
+export const getAssetFile = (files: AssetFile[], type: AssetFileType, { isEdited }: { isEdited: boolean }) => {
+  return files.find((file) => file.type === type && file.isEdited === isEdited);
 };
 
 export const getAssetFiles = (files: AssetFile[]) => ({
-  fullsizeFile: getAssetFile(files, AssetFileType.FullSize),
-  previewFile: getAssetFile(files, AssetFileType.Preview),
-  thumbnailFile: getAssetFile(files, AssetFileType.Thumbnail),
+  fullsizeFile: getAssetFile(files, AssetFileType.FullSize, { isEdited: false }),
+  previewFile: getAssetFile(files, AssetFileType.Preview, { isEdited: false }),
+  thumbnailFile: getAssetFile(files, AssetFileType.Thumbnail, { isEdited: false }),
+  sidecarFile: getAssetFile(files, AssetFileType.Sidecar, { isEdited: false }),
+
+  editedFullsizeFile: getAssetFile(files, AssetFileType.FullSize, { isEdited: true }),
+  editedPreviewFile: getAssetFile(files, AssetFileType.Preview, { isEdited: true }),
+  editedThumbnailFile: getAssetFile(files, AssetFileType.Thumbnail, { isEdited: true }),
+
+  encodedVideoFile: getAssetFile(files, AssetFileType.EncodedVideo, { isEdited: false }),
 });
 
 export const addAssets = async (
   auth: AuthDto,
   repositories: { access: AccessRepository; bulk: IBulkAsset },
-  dto: { parentId: string; assetIds: string[] },
+  dto: { parentId: string; assetIds: string[]; permission: Permission },
 ) => {
   const { access, bulk } = repositories;
   const existingAssetIds = await bulk.getAssetIds(dto.parentId, dto.assetIds);
   const notPresentAssetIds = dto.assetIds.filter((id) => !existingAssetIds.has(id));
   const allowedAssetIds = await checkAccess(access, {
     auth,
-    permission: Permission.AssetShare,
+    permission: dto.permission,
     ids: notPresentAssetIds,
   });
 
@@ -146,14 +153,13 @@ export const onBeforeLink = async (
   if (motionAsset.type !== AssetType.Video) {
     throw new BadRequestException('Live photo video must be a video');
   }
-  if (motionAsset.ownerId !== userId) {
-    throw new BadRequestException('Live photo video does not belong to the user');
+
+  if (motionAsset.visibility !== AssetVisibility.Timeline) {
+    return;
   }
 
-  if (motionAsset && motionAsset.visibility === AssetVisibility.Timeline) {
-    await assetRepository.update({ id: livePhotoVideoId, visibility: AssetVisibility.Hidden });
-    await eventRepository.emit('AssetHide', { assetId: motionAsset.id, userId });
-  }
+  await assetRepository.update({ id: livePhotoVideoId, visibility: AssetVisibility.Hidden });
+  await eventRepository.emit('AssetHide', { assetId: motionAsset.id, userId });
 };
 
 export const onBeforeUnlink = async (
@@ -197,4 +203,33 @@ export const asUploadRequest = (request: AuthRequest, file: Express.Multer.File)
     fieldName: file.fieldname as UploadFieldName,
     file: mapToUploadFile(file as ImmichFile),
   };
+};
+
+const isFlipped = (orientation?: string | null) => {
+  const value = Number(orientation);
+  return value && [5, 6, 7, 8, -90, 90].includes(value);
+};
+
+export const getDimensions = ({
+  exifImageHeight: height,
+  exifImageWidth: width,
+  orientation,
+}: {
+  exifImageHeight: number | null;
+  exifImageWidth: number | null;
+  orientation: string | null;
+}) => {
+  if (!width || !height) {
+    return { width: 0, height: 0 };
+  }
+
+  if (isFlipped(orientation)) {
+    return { width: height, height: width };
+  }
+
+  return { width, height };
+};
+
+export const isPanorama = (asset: { projectionType: string | null; originalFileName: string }) => {
+  return asset.projectionType === 'EQUIRECTANGULAR' || asset.originalFileName.toLowerCase().endsWith('.insp');
 };

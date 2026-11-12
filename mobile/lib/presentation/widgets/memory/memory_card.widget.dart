@@ -1,25 +1,26 @@
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
-import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:immich_mobile/domain/models/asset/base_asset.model.dart';
+import 'package:immich_mobile/domain/models/memory.model.dart';
 import 'package:immich_mobile/extensions/build_context_extensions.dart';
 import 'package:immich_mobile/presentation/widgets/asset_viewer/video_viewer.widget.dart';
 import 'package:immich_mobile/presentation/widgets/images/full_image.widget.dart';
 import 'package:immich_mobile/presentation/widgets/images/image_provider.dart';
-import 'package:immich_mobile/utils/hooks/blurhash_hook.dart';
+import 'package:immich_mobile/presentation/widgets/images/thumb_hash_provider.dart';
+import 'package:immich_mobile/presentation/widgets/memory/memory_title.widget.dart';
 
-class DriftMemoryCard extends StatelessWidget {
+class MemoryCard extends StatelessWidget {
   final RemoteAsset asset;
-  final String title;
+  final Memory memory;
   final bool showTitle;
-  final Function()? onVideoEnded;
+  final bool isCurrent;
 
-  const DriftMemoryCard({
+  const MemoryCard({
     required this.asset,
-    required this.title,
+    required this.memory,
     required this.showTitle,
-    this.onVideoEnded,
+    this.isCurrent = false,
     super.key,
   });
 
@@ -28,7 +29,7 @@ class DriftMemoryCard extends StatelessWidget {
     return Card(
       color: Colors.black,
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.all(Radius.circular(25.0)),
+        borderRadius: BorderRadius.all(Radius.circular(24.0)),
         side: BorderSide(color: Colors.black, width: 1.0),
       ),
       clipBehavior: Clip.hardEdge,
@@ -37,41 +38,45 @@ class DriftMemoryCard extends StatelessWidget {
           SizedBox.expand(child: _BlurredBackdrop(asset: asset)),
           LayoutBuilder(
             builder: (context, constraints) {
+              final r = asset.width != null && asset.height != null
+                  ? asset.width! / asset.height!
+                  : constraints.maxWidth / constraints.maxHeight;
+
               // Determine the fit using the aspect ratio
               BoxFit fit = BoxFit.contain;
               if (asset.width != null && asset.height != null) {
-                final aspectRatio = asset.width! / asset.height!;
                 final phoneAspectRatio = constraints.maxWidth / constraints.maxHeight;
                 // Look for a 25% difference in either direction
-                if (phoneAspectRatio * .75 < aspectRatio && phoneAspectRatio * 1.25 > aspectRatio) {
+                if (phoneAspectRatio * .75 < r && phoneAspectRatio * 1.25 > r) {
                   // Cover to look nice if we have nearly the same aspect ratio
                   fit = BoxFit.cover;
                 }
               }
 
               if (asset.isImage) {
-                return FullImage(asset, fit: fit, size: const Size(double.infinity, double.infinity));
-              } else {
-                return SizedBox(
-                  width: context.width,
-                  height: context.height,
+                return FullImage(asset, fit: fit, size: Size.infinite);
+              }
+
+              return Center(
+                child: AspectRatio(
+                  aspectRatio: r,
                   child: NativeVideoViewer(
                     key: ValueKey(asset.id),
                     asset: asset,
-                    showControls: false,
-                    playbackDelayFactor: 2,
-                    image: FullImage(asset, size: Size(context.width, context.height), fit: BoxFit.contain),
+                    isCurrent: isCurrent,
+                    image: FullImage(asset, size: context.sizeData, fit: BoxFit.contain),
                   ),
-                );
-              }
+                ),
+              );
             },
           ),
           if (showTitle)
             Positioned(
               left: 18.0,
+              right: 18.0,
               bottom: 18.0,
-              child: Text(
-                title,
+              child: MemoryTitle(
+                memory: memory,
                 style: context.textTheme.headlineMedium?.copyWith(color: Colors.white, fontWeight: FontWeight.w500),
               ),
             ),
@@ -81,19 +86,21 @@ class DriftMemoryCard extends StatelessWidget {
   }
 }
 
-class _BlurredBackdrop extends HookWidget {
+class _BlurredBackdrop extends StatelessWidget {
   final RemoteAsset asset;
 
   const _BlurredBackdrop({required this.asset});
 
   @override
   Widget build(BuildContext context) {
-    final blurhash = useDriftBlurHashRef(asset).value;
-    if (blurhash != null) {
+    if (asset.thumbHash != null) {
       // Use a nice cheap blur hash image decoration
-      return Container(
+      return DecoratedBox(
         decoration: BoxDecoration(
-          image: DecorationImage(image: MemoryImage(blurhash), fit: BoxFit.cover),
+          image: DecorationImage(
+            image: ThumbHashProvider(thumbHash: asset.thumbHash!),
+            fit: BoxFit.cover,
+          ),
         ),
         child: Container(color: Colors.black.withValues(alpha: 0.2)),
       );
@@ -103,7 +110,7 @@ class _BlurredBackdrop extends HookWidget {
       // safely use that as the image provider
       return ImageFiltered(
         imageFilter: ImageFilter.blur(sigmaX: 30, sigmaY: 30),
-        child: Container(
+        child: DecoratedBox(
           decoration: BoxDecoration(
             image: DecorationImage(
               image: getFullImageProvider(asset, size: Size(context.width, context.height)),

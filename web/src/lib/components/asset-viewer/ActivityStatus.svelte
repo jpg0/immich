@@ -1,0 +1,51 @@
+<script lang="ts">
+  import { assetViewerManager } from '#lib/managers/asset-viewer-manager.svelte.ts';
+  import { locale } from '#lib/stores/preferences.store.ts';
+  import type { ActivityResponseDto } from '@immich/sdk';
+  import { Button } from '@immich/ui';
+  import { mdiCommentOutline, mdiThumbUp, mdiThumbUpOutline } from '@mdi/js';
+  import { t } from 'svelte-i18n';
+
+  interface Props {
+    isLiked: ActivityResponseDto | null;
+    numberOfComments: number | undefined;
+    numberOfLikes: number | undefined;
+    disabled: boolean;
+    onFavorite: () => void;
+  }
+
+  let { isLiked, numberOfComments, numberOfLikes, disabled, onFavorite }: Props = $props();
+</script>
+
+<div class="flex items-center justify-center gap-1 rounded-full border bg-subtle/70 p-1">
+  <Button
+    {disabled}
+    onclick={onFavorite}
+    aria-label={$t('like')}
+    aria-pressed={!!isLiked}
+    leadingIcon={isLiked ? mdiThumbUp : mdiThumbUpOutline}
+    shape="round"
+    size="large"
+    variant="ghost"
+    color={isLiked ? 'primary' : 'secondary'}
+    class="p-3 text-base"
+  >
+    {#if numberOfLikes}
+      {numberOfLikes.toLocaleString($locale)}
+    {/if}
+  </Button>
+  <Button
+    onclick={() => assetViewerManager.toggleActivityPanel()}
+    aria-label={$t('activity')}
+    leadingIcon={mdiCommentOutline}
+    shape="round"
+    size="large"
+    variant="ghost"
+    color="secondary"
+    class="p-3 text-base"
+  >
+    {#if numberOfComments}
+      {numberOfComments.toLocaleString($locale)}
+    {/if}
+  </Button>
+</div>

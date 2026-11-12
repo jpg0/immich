@@ -7,7 +7,17 @@
         "machine-learning/**"
       ],
       "groupName": "machine-learning",
-      "rangeStrategy": "in-range-only",
+      "rangeStrategy": "in-range-only"
+    },
+    {
+      "matchFileNames": [
+        "machine-learning/**"
+      ],
+      "matchPackageNames": [
+        "onnxruntime*",
+        "rknn-toolkit-lite2"
+      ],
+      "groupName": null
     },
     {
       "matchFileNames": [
@@ -26,10 +36,19 @@
       "matchPackageNames": ["ghcr.io/immich-app/postgres"],
       "matchUpdateTypes": ["major"],
       "enabled": false
+    },
+    {
+      "matchPackageNames": ["ghcr.io/immich-app/base-server-*"],
+      "maxMajorIncrement": 0
+    },
+    {
+      "matchPackageNames": ["ruby"],
+      "groupName": "ruby",
+      "matchCurrentVersion": "< 3.4",
+      "enabled": false
     }
   ],
   "ignorePaths": [
-    "mobile/openapi/pubspec.yaml",
     "mobile/ios",
     "mobile/android"
   ],

@@ -1,25 +1,15 @@
-import 'package:immich_mobile/domain/services/remote_album.service.dart';
+import 'package:freezed_annotation/freezed_annotation.dart';
 import 'package:immich_mobile/models/albums/album_search.model.dart';
+import 'package:immich_mobile/providers/album/album_sort_by_options.provider.dart';
 
-class AlbumFilter {
-  String? userId;
-  String? query;
-  QuickFilterMode mode;
+part 'album_filter.utils.freezed.dart';
 
-  AlbumFilter({required this.mode, this.userId, this.query});
-
-  AlbumFilter copyWith({String? userId, String? query, QuickFilterMode? mode}) {
-    return AlbumFilter(userId: userId ?? this.userId, query: query ?? this.query, mode: mode ?? this.mode);
-  }
+@freezed
+abstract class AlbumFilter with _$AlbumFilter {
+  const factory AlbumFilter({required QuickFilterMode mode, String? userId, String? query}) = _AlbumFilter;
 }
 
-class AlbumSort {
-  RemoteAlbumSortMode mode;
-  bool isReverse;
-
-  AlbumSort({required this.mode, this.isReverse = false});
-
-  AlbumSort copyWith({RemoteAlbumSortMode? mode, bool? isReverse}) {
-    return AlbumSort(mode: mode ?? this.mode, isReverse: isReverse ?? this.isReverse);
-  }
+@freezed
+abstract class AlbumSort with _$AlbumSort {
+  const factory AlbumSort({required AlbumSortMode mode, @Default(false) bool isReverse}) = _AlbumSort;
 }

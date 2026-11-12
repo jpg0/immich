@@ -1,5 +1,5 @@
-import { authenticate } from '$lib/utils/auth';
-import { getFormatter } from '$lib/utils/i18n';
+import { authenticate } from '#lib/utils/auth.ts';
+import { getFormatter } from '#lib/utils/i18n.ts';
 import { searchLargeAssets } from '@immich/sdk';
 import type { PageLoad } from './$types';
 

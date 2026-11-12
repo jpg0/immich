@@ -1,21 +1,18 @@
-import { QueryParameter } from '$lib/constants';
-import { authenticate } from '$lib/utils/auth';
-import { getFormatter } from '$lib/utils/i18n';
-import { getAssetInfoFromParam } from '$lib/utils/navigation';
-import { getAllTags } from '@immich/sdk';
+import { QueryParameter } from '#lib/constants.ts';
+import { queryClient } from '#lib/queries/client.ts';
+import { getAllTagsQuery } from '#lib/queries/tag.query.ts';
+import { authenticate } from '#lib/utils/auth.ts';
+import { getFormatter } from '#lib/utils/i18n.ts';
 import type { PageLoad } from './$types';
 
-export const load = (async ({ params, url }) => {
+export const load = (async ({ url }) => {
   await authenticate(url);
-  const asset = await getAssetInfoFromParam(params);
   const $t = await getFormatter();
 
-  const tags = await getAllTags();
+  await queryClient.query(getAllTagsQuery());
 
   return {
     path: url.searchParams.get(QueryParameter.PATH) ?? '',
-    tags,
-    asset,
     meta: {
       title: $t('tags'),
     },

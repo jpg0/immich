@@ -9,7 +9,9 @@
 </p>
 
 <p align="center">
-<img src="../design/immich-logo-stacked-light.svg" width="300" title="Login met aangepaste URL">
+  <a href="#">
+    <img src="../design/immich-logo-stacked-light.svg" width="300" alt="Immich Logo">
+  </a>
 </p>
 <h3 align="center">Immich - Hoogwaardige, self-hosted back-up oplossing voor foto's en video's</h3>
 <br/>
@@ -31,32 +33,32 @@
   <a href="README_zh_TW.md">正體中文</a>
   <a href="README_uk_UA.md">Українська</a>
   <a href="README_ru_RU.md">Русский</a>
+  <a href="README_bg_BG.md">Български</a>
+  <a href="README_pl_PL.md">Polski</a>
   <a href="README_pt_BR.md">Português Brasileiro</a>
   <a href="README_sv_SE.md">Svenska</a>
   <a href="README_ar_JO.md">العربية</a>
   <a href="README_th_TH.md">ภาษาไทย</a>
+  <a href="README_ml_IN.md">മലയാളം</a>
 </p>
 
-## Disclaimer
+> [!WARNING]
+> ⚠️ Volg altijd het [3-2-1](https://www.backblaze.com/blog/the-3-2-1-backup-strategy/) backup plan voor je kostbare foto's en video's!
+>
 
-- ⚠️ Het project wordt momenteel **zeer actief** ontwikkeld.
-- ⚠️ Verwacht bugs en ingrijpende wijzigingen.
-- ⚠️ **Gebruik de app niet als de enige manier om uw foto's en video's op te slaan.**
-- ⚠️ Volg altijd het [3-2-1](https://www.backblaze.com/blog/the-3-2-1-backup-strategy/) backup plan voor je kostbare foto's en video's!
+> [!NOTE]
+> De belangrijkste documentatie, inclusief installatie handleidingen, zijn te vinden op https://immich.app/.
 
 ## Inhoud
 
-- [Officiële documentatie](https://docs.immich.app)
-- [Toekomstplannen](https://github.com/orgs/immich-app/projects/1)
-- [Demo](#demo)
-- [Functies](#functies)
+- [Officiële documentatie](https://docs.immich.app/)
 - [Introductie](https://docs.immich.app/overview/introduction)
 - [Installatie](https://docs.immich.app/install/requirements)
+- [Toekomstplannen](https://immich.app/roadmap)
+- [Demo](#demo)
+- [Functies](#functies)
+- [Vertalingen](https://docs.immich.app/developer/translations)
 - [Richtlijnen voor bijdragen](https://docs.immich.app/overview/support-the-project)
-
-## Documentatie
-
-De belangrijkste documentatie, inclusief installatie handleidingen, zijn te vinden op https://immich.app/.
 
 ## Demo
 
@@ -108,16 +110,6 @@ Je kunt [hier](https://docs.immich.app/developer/translations) meer over vertali
 ## Repository activiteit
 
 ![Activities](https://repobeats.axiom.co/api/embed/9e86d9dc3ddd137161f2f6d2e758d7863b1789cb.svg "Repobeats analytics image")
-
-## Ster geschiedenis
-
-<a href="https://star-history.com/#immich-app/immich&Date">
- <picture>
-   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=immich-app/immich&type=Date&theme=dark" />
-   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=immich-app/immich&type=Date" />
-   <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=immich-app/immich&type=Date" width="100%" />
- </picture>
-</a>
 
 ## Contributie-leden
 

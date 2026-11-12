@@ -2,42 +2,42 @@ import { DateTime, Duration } from 'luxon';
 
 export type ZoneOption = {
   /**
-   * Timezone name with offset
-   *
-   * e.g. Asia/Jerusalem (+03:00)
-   */
+  Timezone name with offset
+  
+  e.g. Asia/Jerusalem (+03:00)
+  */
   label: string;
 
   /**
-   * Timezone name
-   *
-   * e.g. Asia/Jerusalem
-   */
+  Timezone name
+  
+  e.g. Asia/Jerusalem
+  */
   value: string;
 
   /**
-   * Timezone offset in minutes
-   *
-   * e.g. 300
-   */
+  Timezone offset in minutes
+  
+  e.g. 300
+  */
   offsetMinutes: number;
 
   /**
-   * True iff the date is valid
-   *
-   * Dates may be invalid for various reasons, for example setting a day that does not exist (30 Feb 2024).
-   * Due to daylight saving time, 2:30am is invalid for Europe/Berlin on Mar 31 2024.The two following local times
-   * are one second apart:
-   *
-   * - Mar 31 2024 01:59:59 (GMT+0100, unix timestamp 1725058799)
-   * - Mar 31 2024 03:00:00 (GMT+0200, unix timestamp 1711846800)
-   *
-   * Mar 31 2024 02:30:00 does not exist in Europe/Berlin, this is an invalid date/time/time zone combination.
-   */
+  True iff the date is valid
+  
+  Dates may be invalid for various reasons, for example setting a day that does not exist (30 Feb 2024).
+  Due to daylight saving time, 2:30am is invalid for Europe/Berlin on Mar 31 2024.The two following local times
+  are one second apart:
+  
+  - Mar 31 2024 01:59:59 (GMT+0100, unix timestamp 1725058799)
+  - Mar 31 2024 03:00:00 (GMT+0200, unix timestamp 1711846800)
+  
+  Mar 31 2024 02:30:00 does not exist in Europe/Berlin, this is an invalid date/time/time zone combination.
+  */
   valid: boolean;
 };
 
-const userTimeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+const userTimeZone = new Intl.DateTimeFormat().resolvedOptions().timeZone;
 const knownTimezones = Intl.supportedValuesOf('timeZone');
 
 export function getTimezones(selectedDate: string) {
@@ -70,9 +70,21 @@ export function getModernOffsetForZoneAndDate(
 
 function zoneOptionForDate(zone: string, date: string) {
   const { offsetMinutes, offsetFormat: zoneOffsetAtDate } = getModernOffsetForZoneAndDate(zone, date);
-  // For validity, we still need to check if the exact date/time exists in the *original* timezone (for gaps/overlaps).
-  const dateForValidity = DateTime.fromISO(date, { zone });
-  const valid = dateForValidity.isValid && date === dateForValidity.toFormat("yyyy-MM-dd'T'HH:mm:ss.SSS");
+  // For validity, we still need to check if the exact date/time exists in the *original* timezone.
+  // Use the fact that in DST gaps Luxon advances the missing time by an hour.
+  // Ignore milliseconds:
+  // - milliseconds are not relevant for TZ calculations
+  // - browsers strip insignificant .000 making string comparison with milliseconds more fragile.
+  //
+  // Also, some browsers emit `datetime-local` values without seconds when seconds are 00,
+  // e.g. `2024-01-01T00:00` instead of `2024-01-01T00:00:00.000`.
+  // In that case we must compare with minute precision (otherwise every zone looks "invalid").
+  const dateInTimezone = DateTime.fromISO(date, { zone });
+  const withoutMillis = date.replace(/\.\d+/, '');
+  const hasSeconds = /T\d{2}:\d{2}:\d{2}$/.test(withoutMillis);
+  const compareFormat = hasSeconds ? "yyyy-MM-dd'T'HH:mm:ss" : "yyyy-MM-dd'T'HH:mm";
+  const exists = withoutMillis === dateInTimezone.toFormat(compareFormat);
+  const valid = dateInTimezone.isValid && exists;
   return {
     value: zone,
     offsetMinutes,
@@ -83,7 +95,7 @@ function zoneOptionForDate(zone: string, date: string) {
 
 function sortTwoZones(zoneA: ZoneOption, zoneB: ZoneOption) {
   const offsetDifference = zoneA.offsetMinutes - zoneB.offsetMinutes;
-  if (offsetDifference != 0) {
+  if (offsetDifference !== 0) {
     return offsetDifference;
   }
   return zoneA.value.localeCompare(zoneB.value, undefined, { sensitivity: 'base' });

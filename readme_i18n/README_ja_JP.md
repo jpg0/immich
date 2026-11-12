@@ -9,7 +9,9 @@
 </p>
 
 <p align="center">
-<img src="../design/immich-logo-stacked-light.svg" width="300" title="Login With Custom URL">
+  <a href="#">
+    <img src="../design/immich-logo-stacked-light.svg" width="300" alt="Immich Logo">
+  </a>
 </p>
 <h3 align="center">Immich - 高性能なセルフホスト 写真/ビデオバックアップソリューション</h3>
 <br/>
@@ -30,32 +32,32 @@
   <a href="README_zh_CN.md">简体中文</a>
   <a href="README_zh_TW.md">正體中文</a>
   <a href="README_ru_RU.md">Русский</a>
+  <a href="README_bg_BG.md">Български</a>
+  <a href="README_pl_PL.md">Polski</a>
   <a href="README_pt_BR.md">Português Brasileiro</a>
   <a href="README_sv_SE.md">Svenska</a>
   <a href="README_ar_JO.md">العربية</a>
   <a href="README_th_TH.md">ภาษาไทย</a>
+  <a href="README_ml_IN.md">മലയാളം</a>
 </p>
 
-## 免責事項
+> [!WARNING]
+> ⚠️ 大切な写真やビデオは、常に [3-2-1](https://www.backblaze.com/blog/the-3-2-1-backup-strategy/) のバックアッププランに従ってください！
+>
 
-- ⚠️ このプロジェクトは **非常に活発に** 開発中です。
-- ⚠️ バグの存在や変更が入ることも予想されます。
-- ⚠️ **写真やビデオを保存する唯一の方法としてこのアプリを使用しないでください。**
-- ⚠️ 大切な写真やビデオは、常に [3-2-1](https://www.backblaze.com/blog/the-3-2-1-backup-strategy/) のバックアッププランに従ってください！
+> [!NOTE]
+> インストールガイドを含む主なドキュメントは、https://immich.app/ です。
 
 ## コンテンツ
 
-- [公式ドキュメント](https://docs.immich.app)
-- [ロードマップ](https://github.com/orgs/immich-app/projects/1)
-- [デモ](#デモ)
-- [機能](#機能)
+- [公式ドキュメント](https://docs.immich.app/)
 - [紹介](https://docs.immich.app/overview/introduction)
 - [インストール](https://docs.immich.app/install/requirements)
+- [ロードマップ](https://immich.app/roadmap)
+- [デモ](#デモ)
+- [機能](#機能)
+- [翻訳](https://docs.immich.app/developer/translations)
 - [コントリビューションガイド](https://docs.immich.app/overview/support-the-project)
-
-## ドキュメント
-
-インストールガイドを含む主なドキュメントは、https://immich.app/ です。
 
 ## デモ
 
